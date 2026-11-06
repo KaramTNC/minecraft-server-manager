@@ -473,9 +473,28 @@ export class ManagedModService {
     }
     const response = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(45_000) });
     if (!response.ok) throw new ModManagementError(`Mod download failed: ${response.status} ${response.statusText}.`, 502);
-    const declaredLength = Number(response.headers.get('content-length') ?? file.size);
-    if (declaredLength > MAX_MOD_BYTES) throw new ModManagementError('Mod file exceeds the 100 MB safety limit.', 422);
-    const bytes = Buffer.from(await response.arrayBuffer());
+    const lengthHeader = response.headers.get('content-length');
+    const declaredLength = lengthHeader == null ? file.size : Number(lengthHeader);
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_MOD_BYTES) {
+      throw new ModManagementError('Mod file exceeds the 100 MB safety limit.', 422);
+    }
+    if (!response.body) throw new ModManagementError('Mod download returned an empty response body.', 502);
+    const reader = response.body.getReader();
+    const chunks: Buffer[] = [];
+    let receivedLength = 0;
+    while (true) {
+      const chunk = await reader.read().catch(() => {
+        throw new ModManagementError('Mod download stream failed before completion.', 502);
+      });
+      if (chunk.done) break;
+      receivedLength += chunk.value.byteLength;
+      if (receivedLength > MAX_MOD_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        throw new ModManagementError('Mod file exceeds the 100 MB safety limit.', 422);
+      }
+      chunks.push(Buffer.from(chunk.value));
+    }
+    const bytes = Buffer.concat(chunks, receivedLength);
     if (bytes.length === 0 || bytes.length > MAX_MOD_BYTES || (file.size > 0 && bytes.length !== file.size)) {
       throw new ModManagementError('Downloaded file size does not match the publisher metadata.', 422);
     }
