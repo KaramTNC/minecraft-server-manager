@@ -5,11 +5,18 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ModSourceFactory, type ModFile, type ModVersion } from '@minecraft-docker/shared';
 import type { IModSourcePort } from '@minecraft-docker/shared/application';
+import JSZip from 'jszip';
 import { ManagedModService, ModManagementError } from '../src/services/ManagedModService.js';
 
 const bytes = Buffer.from('verified test jar artifact');
 const sha1 = createHash('sha1').update(bytes).digest('hex');
 const sha512 = createHash('sha512').update(bytes).digest('hex');
+
+async function writeJar(path: string, entries: Record<string, string>) {
+  const zip = new JSZip();
+  for (const [name, value] of Object.entries(entries)) zip.file(name, value);
+  writeFileSync(path, await zip.generateAsync({ type: 'nodebuffer' }));
+}
 
 function makeVersion(id: string, versionNumber: string, mcVersion = '1.21.1', fileBytes = bytes, checksum = sha512): ModVersion {
   const file: ModFile = {
@@ -131,6 +138,59 @@ describe('ManagedModService', () => {
       .toEqual(['config/example.toml']);
     expect(service.list('survival')[0]?.configFiles).toEqual(['config/example.toml']);
     expect(() => service.setConfigFiles('survival', installed.filename, ['../server.properties']))
-      .toThrow(/config directory/);
+      .toThrow(/supported config folders/);
+  });
+
+  it('detects a Fabric mod config from its JAR ID and provides aliases', async () => {
+    const dataDir = join(root, 'servers', 'survival', 'data');
+    const jarPath = join(dataDir, 'mods', 'example.jar');
+    await writeJar(jarPath, {
+      'fabric.mod.json': JSON.stringify({ schemaVersion: 1, id: 'example_mod', provides: ['example_alias'] }),
+    });
+    const configDir = join(dataDir, 'config');
+    mkdirSync(join(configDir, 'example_alias'), { recursive: true });
+    writeFileSync(join(configDir, 'example-mod.toml'), 'enabled=true\n');
+    writeFileSync(join(configDir, 'example_alias', 'settings.json'), '{}\n');
+    writeFileSync(join(configDir, 'unrelated.toml'), 'enabled=false\n');
+
+    const discovery = await service.discoverConfigFiles('survival', 'example.jar');
+    expect(discovery.modIds).toEqual(['example_mod', 'example_alias']);
+    expect(discovery.detected).toEqual(['config/example_alias/settings.json', 'config/example-mod.toml']);
+    expect(discovery.selected).toEqual(discovery.detected);
+    expect(discovery.manual).toBe(false);
+  });
+
+  it('reads Forge mod declarations without mistaking dependency IDs for config owners', async () => {
+    const dataDir = join(root, 'servers', 'survival', 'data');
+    await writeJar(join(dataDir, 'mods', 'example.jar'), {
+      'META-INF/mods.toml': '[[mods]]\nmodId="example_mod"\n[[dependencies.example_mod]]\nmodId="minecraft"\n',
+    });
+    const configDir = join(dataDir, 'config');
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(join(configDir, 'example_mod-server.toml'), 'enabled=true\n');
+    writeFileSync(join(configDir, 'minecraft-server.toml'), 'enabled=false\n');
+
+    const discovery = await service.discoverConfigFiles('survival', 'example.jar');
+    expect(discovery.modIds).toEqual(['example_mod']);
+    expect(discovery.detected).toEqual(['config/example_mod-server.toml']);
+  });
+
+  it('discovers default and world server configs while preserving explicit custom links', async () => {
+    const dataDir = join(root, 'servers', 'survival', 'data');
+    await writeJar(join(dataDir, 'mods', 'example.jar'), {
+      'fabric.mod.json': JSON.stringify({ schemaVersion: 1, id: 'example' }),
+    });
+    mkdirSync(join(dataDir, 'defaultconfigs'), { recursive: true });
+    mkdirSync(join(dataDir, 'world', 'serverconfig'), { recursive: true });
+    writeFileSync(join(dataDir, 'server.properties'), 'level-name=world\n');
+    writeFileSync(join(dataDir, 'defaultconfigs', 'example.toml'), 'enabled=true\n');
+    writeFileSync(join(dataDir, 'world', 'serverconfig', 'example-server.toml'), 'enabled=true\n');
+    const custom = ['defaultconfigs/example.toml'];
+    service.setConfigFiles('survival', 'example.jar', custom);
+
+    const discovery = await service.discoverConfigFiles('survival', 'example.jar');
+    expect(discovery.detected).toEqual(['defaultconfigs/example.toml', 'world/serverconfig/example-server.toml']);
+    expect(discovery.selected).toEqual(custom);
+    expect(discovery.manual).toBe(true);
   });
 });

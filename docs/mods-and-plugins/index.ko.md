@@ -6,7 +6,7 @@ mcctl CLI와 Web Console을 사용하여 마인크래프트 서버에 모드와 
 
 호환되는 Fabric, Quilt, Forge, NeoForge 서버에서 **Server → Mods**를 열면 Modrinth나 CurseForge를 검색하고, 서버에 설정된 Minecraft 버전과 로더에 맞는 정확한 버전을 선택해 설치할 수 있습니다. mcctl은 JAR 파일을 쓰기 전에 게시자가 제공한 SHA-1 또는 SHA-512 체크섬을 확인합니다. 게시자가 호환되는 의존성 정보를 제공하면 필수 의존성도 함께 설치합니다.
 
-Mods 탭에서 JAR 목록을 보고, 업데이트를 확인해 하나 또는 모두 적용하고, 파일을 비활성화하거나 삭제할 수 있습니다. 모드별 설정 파일을 연결한 뒤 각 파일의 원래 텍스트 형식을 유지하며 편집할 수 있습니다. 모드 JAR과 대부분의 모드 설정 변경은 적용하려면 서버 재시작이 필요합니다. 기존 Modrinth JAR은 **Identify existing**를 사용해 체크섬으로 게시자와 정확한 버전을 연결할 수 있습니다. 연결되지 않은 파일도 비활성화하거나 삭제할 수 있으며, 삭제한 뒤 게시자의 검증된 버전을 다시 설치할 수 있습니다.
+Mods 탭에서 JAR 목록을 보고, 업데이트를 확인해 하나 또는 모두 적용하고, 파일을 비활성화하거나 삭제할 수 있습니다. mcctl은 Fabric, Quilt, Forge, NeoForge JAR 메타데이터에서 모드 ID를 읽고 `config`, `defaultconfigs`, 서버 설정 폴더의 파일과 자동으로 대조합니다. 감지된 파일은 해당 모드에서 바로 열 수 있습니다. 모드가 일반적인 파일 이름을 사용하면 **Browse all config files**에서 찾아 사용자 지정 연결을 저장하세요. 편집기는 각 파일의 원래 텍스트 형식을 유지합니다. 모드 JAR과 대부분의 모드 설정 변경은 적용하려면 서버 재시작이 필요합니다. 기존 Modrinth JAR은 **Identify existing**를 사용해 체크섬으로 게시자와 정확한 버전을 연결할 수 있습니다. 연결되지 않은 파일도 비활성화하거나 삭제할 수 있으며, 삭제한 뒤 게시자의 검증된 버전을 다시 설치할 수 있습니다.
 
 CurseForge 공개 REST API를 사용하려면 API 키가 필요합니다. Mods 대화상자의 게시자 선택 영역에서 키를 입력하면 mcctl이 Git에 포함되지 않는 플랫폼 `.env` 파일에 저장하며 브라우저에는 다시 노출하지 않습니다. 키는 [CurseForge API Console](https://console.curseforge.com/)에서 발급받습니다.
 

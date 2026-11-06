@@ -1,12 +1,15 @@
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, relative, resolve } from 'node:path';
+import JSZip from 'jszip';
 import { parseEnvDocument } from '@minecraft-docker/shared/utils';
 import { ModSourceFactory, type ModFile, type ModProject, type ModVersion } from '@minecraft-docker/shared';
 
 const MAX_MOD_BYTES = 100 * 1024 * 1024;
+const MAX_MOD_METADATA_BYTES = 128 * 1024;
 const SAFE_FILENAME = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,199}\.jar$/i;
 const LOCK_FILE = '.mcctl-mods.json';
+const NON_MOD_CONFIG_IDS = new Set(['minecraft', 'fabric', 'fabricloader', 'forge', 'neoforge', 'quilt', 'quilt_loader', 'java']);
 
 export interface ServerModCompatibility {
   gameVersion: string;
@@ -164,23 +167,54 @@ export class ManagedModService {
   }
 
   listConfigFiles(serverName: string): string[] {
-    const configDir = join(this.dataDir(serverName), 'config');
-    if (!existsSync(configDir)) return [];
+    const dataDir = this.dataDir(serverName);
+    const configRoots = [join(dataDir, 'config'), join(dataDir, 'defaultconfigs'), join(dataDir, 'serverconfig')];
+    const propertiesPath = join(dataDir, 'server.properties');
+    if (existsSync(propertiesPath)) {
+      const levelName = readFileSync(propertiesPath, 'utf8').match(/^\s*level-name\s*=\s*([^\r\n#]+)/m)?.[1]?.trim();
+      if (levelName && /^[A-Za-z0-9._-]{1,100}$/.test(levelName) && levelName !== '.' && levelName !== '..') {
+        configRoots.push(join(dataDir, levelName, 'serverconfig'));
+      }
+    }
     const allowed = /\.(json|toml|cfg|conf|properties|ya?ml|ini|txt)$/i;
-    const results: string[] = [];
+    const results = new Set<string>();
     const walk = (dir: string, depth: number) => {
-      if (depth > 8 || results.length >= 2000) return;
+      if (depth > 8 || results.size >= 2000) return;
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
         if (entry.isSymbolicLink() || entry.name.startsWith('.')) continue;
         const absolute = join(dir, entry.name);
         if (entry.isDirectory()) walk(absolute, depth + 1);
         else if (entry.isFile() && allowed.test(entry.name) && statSync(absolute).size <= 5 * 1024 * 1024) {
-          results.push(relative(this.dataDir(serverName), absolute).split('\\').join('/'));
+          results.add(relative(dataDir, absolute).split('\\').join('/'));
         }
       }
     };
-    walk(configDir, 0);
-    return results.sort((a, b) => a.localeCompare(b));
+    for (const root of configRoots) if (existsSync(root)) walk(root, 0);
+    return [...results].sort((a, b) => a.localeCompare(b));
+  }
+
+  async discoverConfigFiles(serverName: string, filename: string): Promise<{
+    files: string[];
+    selected: string[];
+    detected: string[];
+    modIds: string[];
+    manual: boolean;
+  }> {
+    this.assertFilename(filename);
+    const mod = this.list(serverName).find((item) => item.filename === filename);
+    if (!mod) throw new ModManagementError(`Mod '${filename}' was not found.`, 404);
+
+    const files = this.listConfigFiles(serverName);
+    const record = this.readLock(serverName).mods.find((item) => item.filename === filename);
+    const folder = mod.enabled ? 'mods' : 'mods-disabled';
+    const jarPath = join(this.dataDir(serverName), folder, filename);
+    const modIds = await this.readModIds(jarPath, record?.slug, filename);
+    const detected = files.filter((file) => this.configPathMatchesIds(file, modIds));
+    const manual = Array.isArray(record?.configFiles);
+    const selected = manual
+      ? record!.configFiles!.filter((file) => files.includes(file))
+      : detected;
+    return { files, selected, detected, modIds, manual };
   }
 
   setConfigFiles(serverName: string, filename: string, configFiles: string[]): string[] {
@@ -189,7 +223,7 @@ export class ManagedModService {
     if (!installed) throw new ModManagementError(`Mod '${filename}' was not found.`, 404);
     const available = new Set(this.listConfigFiles(serverName));
     const unique = [...new Set(configFiles)];
-    if (unique.some((path) => !available.has(path))) throw new ModManagementError('Choose config files from this server\'s config directory.', 400);
+    if (unique.some((path) => !available.has(path))) throw new ModManagementError('Choose config files from this server\'s supported config folders.', 400);
     const records = this.readLock(serverName).mods;
     const existing = records.find((record) => record.filename === filename);
     const record: ManagedModRecord = existing ?? {
@@ -332,6 +366,87 @@ export class ManagedModService {
   private isCompatible(version: ModVersion, compatibility: ServerModCompatibility): boolean {
     return version.gameVersions.some((item) => item.toLowerCase() === compatibility.gameVersion.toLowerCase()) &&
       version.loaders.some((item) => item.toLowerCase() === compatibility.loader.toLowerCase());
+  }
+
+  private async readModIds(jarPath: string, slug?: string, filename?: string): Promise<string[]> {
+    const ids = new Set<string>();
+    const addId = (value: unknown) => {
+      if (typeof value !== 'string') return;
+      const id = value.trim().toLowerCase();
+      if (/^[a-z0-9_.-]{2,128}$/.test(id) && !NON_MOD_CONFIG_IDS.has(id)) ids.add(id);
+    };
+    const addProvides = (value: unknown) => {
+      if (Array.isArray(value)) value.forEach(addId);
+    };
+
+    if (existsSync(jarPath)) {
+      try {
+        const bytes = readFileSync(jarPath);
+        if (bytes.length <= MAX_MOD_BYTES) {
+          const zip = await JSZip.loadAsync(bytes, { checkCRC32: false, createFolders: false });
+          for (const entryName of ['fabric.mod.json', 'quilt.mod.json', 'mcmod.info']) {
+            const entry = zip.file(entryName);
+            if (!entry) continue;
+            const size = (entry as unknown as { _data?: { uncompressedSize?: number } })._data?.uncompressedSize;
+            if (size != null && size > MAX_MOD_METADATA_BYTES) continue;
+            try {
+              const metadata = JSON.parse(await entry.async('string')) as Record<string, unknown> | Array<Record<string, unknown>>;
+              if (entryName === 'fabric.mod.json') {
+                const fabric = metadata as Record<string, unknown>;
+                addId(fabric.id);
+                addProvides(fabric.provides);
+              } else if (entryName === 'quilt.mod.json') {
+                const quilt = (metadata as Record<string, unknown>).quilt_loader as Record<string, unknown> | undefined;
+                addId(quilt?.id);
+                addProvides(quilt?.provides);
+              } else {
+                const legacy = Array.isArray(metadata) ? metadata : [metadata as Record<string, unknown>];
+                legacy.forEach((item) => addId(item.modid ?? item.modId));
+              }
+            } catch { /* Ignore malformed optional metadata and continue with other descriptors. */ }
+          }
+
+          for (const entryName of ['META-INF/mods.toml', 'META-INF/neoforge.mods.toml']) {
+            const entry = zip.file(entryName);
+            if (!entry) continue;
+            const size = (entry as unknown as { _data?: { uncompressedSize?: number } })._data?.uncompressedSize;
+            if (size != null && size > MAX_MOD_METADATA_BYTES) continue;
+            const text = await entry.async('string');
+            let inModDeclaration = false;
+            for (const line of text.split(/\r?\n/)) {
+              const section = line.match(/^\s*\[\[?([^\]]+)\]\]?\s*$/)?.[1]?.trim();
+              if (section) inModDeclaration = /^mods$/i.test(section);
+              if (!inModDeclaration) continue;
+              const match = line.match(/^\s*modId\s*=\s*["']([^"']+)["']/i);
+              if (match) addId(match[1]);
+            }
+          }
+        }
+      } catch { /* Some installed jars may be corrupt or use metadata we do not recognize. */ }
+    }
+
+    if (ids.size === 0) {
+      if (slug) addId(slug);
+      if (filename) addId(basename(filename, '.jar').replace(/[-_.]?(?:mc)?\d+(?:[._+-][a-z0-9]+)*$/i, ''));
+    }
+    return [...ids];
+  }
+
+  private configPathMatchesIds(file: string, ids: string[]): boolean {
+    const relativePath = file.replace(/\\/g, '/').toLowerCase();
+    const parts = relativePath.split('/').filter(Boolean);
+    const filename = parts.at(-1) ?? '';
+    const stem = filename.replace(/\.[^.]+$/, '');
+    const tokens = [...parts.slice(1, -1), stem].flatMap((part) => part.split(/[-_.\s]+/));
+    const normalizedTokens = tokens.map((part) => part.replace(/[^a-z0-9]/g, '')).filter(Boolean);
+    const normalizedStem = stem.replace(/[^a-z0-9]/g, '');
+    const normalizedPathParts = parts.slice(1).map((part) => part.replace(/\.[^.]+$/, '').replace(/[^a-z0-9]/g, ''));
+    return ids.some((id) => {
+      const normalizedId = id.replace(/[^a-z0-9]/g, '');
+      if (normalizedId.length < 3) return false;
+      return normalizedTokens.includes(normalizedId) || normalizedStem.includes(normalizedId) ||
+        normalizedPathParts.some((part) => part.includes(normalizedId));
+    });
   }
 
   private latestCompatible(versions: ModVersion[], compatibility: ServerModCompatibility): ModVersion | null {

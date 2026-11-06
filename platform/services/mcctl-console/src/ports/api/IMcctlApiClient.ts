@@ -663,7 +663,13 @@ export interface CompatibleModVersionsResponse {
   loader: string;
   versions: ModVersionOption[];
 }
-export interface ModConfigFilesResponse { files: string[]; selected: string[] }
+export interface ModConfigFilesResponse {
+  files: string[];
+  selected: string[];
+  detected: string[];
+  modIds: string[];
+  manual: boolean;
+}
 export interface ModUpdatesResponse {
   updates: Array<{ filename: string; currentVersion: string; latestVersion: string | null; updateAvailable: boolean }>;
 }

@@ -222,9 +222,7 @@ const modsPlugin: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   }, async (request, reply) => {
     if (!serverExists(request.params.name)) return reply.code(404).send({ error: 'NotFound', message: `Server '${request.params.name}' not found` });
     try {
-      const mod = managedMods.list(request.params.name).find((entry) => entry.filename === request.params.filename);
-      if (!mod) return reply.code(404).send({ error: 'NotFound', message: `Mod '${request.params.filename}' was not found.` });
-      return reply.send({ files: managedMods.listConfigFiles(request.params.name), selected: mod.configFiles ?? [] });
+      return reply.send(await managedMods.discoverConfigFiles(request.params.name, request.params.filename));
     } catch (error) {
       const status = error instanceof ModManagementError ? error.statusCode : 500;
       return reply.code(status).send({ error: 'InternalServerError', message: (error as Error).message });

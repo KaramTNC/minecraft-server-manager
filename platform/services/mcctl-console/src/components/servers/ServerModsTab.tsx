@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Alert from '@mui/material/Alert';
+import Accordion from '@mui/material/Accordion';
+import AccordionDetails from '@mui/material/AccordionDetails';
+import AccordionSummary from '@mui/material/AccordionSummary';
 import Avatar from '@mui/material/Avatar';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -25,8 +28,10 @@ import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import AddIcon from '@mui/icons-material/Add';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ExtensionIcon from '@mui/icons-material/Extension';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SettingsIcon from '@mui/icons-material/Settings';
 import UpdateIcon from '@mui/icons-material/Update';
@@ -88,6 +93,9 @@ export function ServerModsTab({ serverName }: ServerModsTabProps) {
 
   const updateByFilename = useMemo(() => new Map((updatesData?.updates ?? []).map((item) => [item.filename, item])), [updatesData]);
   const availableSource = sourcesData?.sources.find((item) => item.id === source);
+  const configLinksChanged = configData
+    ? [...selectedConfigs].sort().join('\n') !== [...configData.selected].sort().join('\n')
+    : false;
 
   useEffect(() => {
     if (!versionData?.versions.length) {
@@ -310,16 +318,57 @@ export function ServerModsTab({ serverName }: ServerModsTabProps) {
           <>
             <DialogTitle>Configuration files · {configMod?.title || configMod?.filename}</DialogTitle>
             <DialogContent>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>Select the files this mod uses. They stay in their original JSON, TOML, YAML, or properties format.</Typography>
-              {loadingConfig ? <CircularProgress size={24} /> : configData?.files.length ? configData.files.map((file) => (
-                <Box key={file} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Checkbox checked={selectedConfigs.includes(file)} onChange={(event) => setSelectedConfigs((current) => event.target.checked ? [...current, file] : current.filter((item) => item !== file))} />
-                  <Typography sx={{ flex: 1, fontFamily: 'monospace', fontSize: '0.85rem' }}>{file}</Typography>
-                  <Button size="small" onClick={() => setEditingConfig(file)}>Open</Button>
-                </Box>
-              )) : <Alert severity="info">No text config files exist under the server’s config directory yet. Some mods create them after the first server start.</Alert>}
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                mcctl reads the mod ID from the installed JAR and matches it to config file names and folders. Open a detected file directly, or browse other text configs if the mod uses a generic name.
+              </Typography>
+              {loadingConfig ? <CircularProgress size={24} /> : configData && (
+                <>
+                  {configData.modIds.length > 0 && (
+                    <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap', mb: 1.5 }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ alignSelf: 'center' }}>JAR IDs</Typography>
+                      {configData.modIds.map((id) => <Chip key={id} size="small" label={id} />)}
+                    </Box>
+                  )}
+                  {configData.detected.length > 0 ? (
+                    <>
+                      <Alert severity="success" icon={<AutoAwesomeIcon />} sx={{ mb: 1.5 }}>
+                        Detected {configData.detected.length} config file{configData.detected.length === 1 ? '' : 's'} for this mod.
+                      </Alert>
+                      {configData.detected.map((file) => (
+                        <Box key={file} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.4 }}>
+                          <AutoAwesomeIcon fontSize="small" color="primary" />
+                          <Typography sx={{ flex: 1, fontFamily: 'monospace', fontSize: '0.85rem' }}>{file}</Typography>
+                          <Button size="small" onClick={() => setEditingConfig(file)}>Open</Button>
+                        </Box>
+                      ))}
+                    </>
+                  ) : (
+                    <Alert severity="info" sx={{ mb: 1.5 }}>
+                      No config file matched this mod’s ID yet. Some mods create configs after the next server start; you can also browse all text configs below.
+                    </Alert>
+                  )}
+                  {configData.files.length > 0 ? (
+                    <Accordion disableGutters elevation={0} sx={{ mt: 1, border: 1, borderColor: 'divider', '&:before': { display: 'none' } }}>
+                      <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                        <Typography>Browse all config files ({configData.files.length})</Typography>
+                      </AccordionSummary>
+                      <AccordionDetails sx={{ pt: 0 }}>
+                        {configData.files.map((file) => (
+                          <Box key={file} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Checkbox checked={selectedConfigs.includes(file)} onChange={(event) => setSelectedConfigs((current) => event.target.checked ? [...current, file] : current.filter((item) => item !== file))} />
+                            <Typography sx={{ flex: 1, fontFamily: 'monospace', fontSize: '0.85rem' }}>{file}</Typography>
+                            <Button size="small" onClick={() => setEditingConfig(file)}>Open</Button>
+                          </Box>
+                        ))}
+                      </AccordionDetails>
+                    </Accordion>
+                  ) : configData.detected.length === 0 ? (
+                    <Alert severity="info">No text config files exist yet. Restart the server once so mods can create their config files.</Alert>
+                  ) : null}
+                </>
+              )}
             </DialogContent>
-            <DialogActions><Button onClick={() => setConfigMod(null)}>Close</Button><Button onClick={() => void handleConfigSave()} disabled={saveConfigs.isPending}>{saveConfigs.isPending ? 'Saving…' : 'Save mod links'}</Button></DialogActions>
+            <DialogActions><Button onClick={() => setConfigMod(null)}>Close</Button><Button onClick={() => void handleConfigSave()} disabled={!configLinksChanged || saveConfigs.isPending}>{saveConfigs.isPending ? 'Saving…' : 'Save custom links'}</Button></DialogActions>
           </>
         )}
       </Dialog>
