@@ -625,7 +625,24 @@ data: {"type":"connection-closed","data":{"timestamp":"2026-10-25T10:31:00.000Z"
 
 ## 모드 { #mods }
 
-모드는 서버의 `config.env`에 기록되며, Modrinth 프로젝트는 `MODRINTH_PROJECTS`에 들어갑니다. 모드 소스는 `modrinth`(사용 가능한 유일한 소스)입니다.
+기존 `GET/POST/DELETE /api/servers/:name/mods` 경로는 게시자 프로젝트 목록을 `config.env`에서 계속 관리합니다. 아래의 게시자 독립 관리 경로는 검증된 JAR 파일을 직접 설치하고 관리합니다. Modrinth는 기본 제공되며 CurseForge를 사용하려면 플랫폼 API 키가 필요합니다.
+
+### 게시자 독립 모드 관리자
+
+| 메서드 및 경로 | 용도 |
+|----------------|------|
+| `GET /api/mods/sources` | 게시자와 사용 가능 여부를 나열합니다. |
+| `PUT /api/mods/sources/curseforge-key` | CurseForge API 키를 설정합니다 (`{"apiKey":"…"}`). 키는 서버에 저장되며 응답으로 반환되지 않습니다. |
+| `GET /api/servers/:name/mods/compatibility` | 호환성 확인에 사용하는 서버의 Minecraft 버전과 모드 로더를 조회합니다. |
+| `GET /api/mods/search?q=…&source=…&serverName=…` | 게시자에서 검색합니다. `serverName`을 지정하면 해당 서버의 정확한 버전과 로더에 맞는 결과만 반환합니다. |
+| `GET /api/mods/:slug/compatible-versions?source=…&serverName=…` | 서버의 정확한 Minecraft 버전과 로더에 맞는 버전을 나열합니다. |
+| `POST /api/servers/:name/mods/manage` | 게시자의 특정 아티팩트를 설치합니다 (`{"source":"modrinth","projectId":"…","versionId":"…"}`). 파일을 쓰기 전에 호환성과 게시자가 제공한 체크섬을 확인합니다. |
+| `GET /api/servers/:name/mods/updates` / `POST /api/servers/:name/mods/update` | 업데이트를 확인하고 관리 대상 모드를 모두 업데이트하거나 지정된 `filenames`만 업데이트합니다. |
+| `POST /api/servers/:name/mods/adopt` | 기존 JAR을 체크섬으로 식별합니다. |
+| `PATCH /api/servers/:name/mods/installed/:filename/state` / `DELETE /api/servers/:name/mods/installed/:filename` | JAR을 비활성화/활성화하거나 삭제합니다. |
+| `GET/PUT /api/servers/:name/mods/installed/:filename/configs` | 설치된 모드와 연결된 설정 파일을 읽거나 지정합니다. `PUT` 본문 예: `{"files":["config/example.toml"]}`. |
+
+모드 검색 및 설치는 게시자의 정확한 아티팩트를 사용하며, 위의 기존 프로젝트 목록을 변경하지 않습니다. 모드 JAR 및 설정 변경은 해당하는 경우 `restartRequired`를 반환합니다.
 
 ### GET /api/servers/:name/mods
 

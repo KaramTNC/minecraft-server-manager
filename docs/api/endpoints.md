@@ -625,7 +625,24 @@ Each change writes a `server.hostname` audit entry.
 
 ## Mods { #mods }
 
-Mods are kept in the server's `config.env`; Modrinth projects in `MODRINTH_PROJECTS`. The mod source is `modrinth` (the only one available).
+The legacy `GET/POST/DELETE /api/servers/:name/mods` routes continue to manage publisher project lists in `config.env`. The publisher-agnostic manager routes below install and manage verified JAR files directly. Modrinth is available by default; CurseForge requires a platform API key.
+
+### Publisher-agnostic mod manager
+
+| Method and route | Purpose |
+|------------------|---------|
+| `GET /api/mods/sources` | List configured publishers and availability. |
+| `PUT /api/mods/sources/curseforge-key` | Set the CurseForge API key (`{"apiKey":"…"}`); the key is stored server-side and never returned. |
+| `GET /api/servers/:name/mods/compatibility` | Read the server's Minecraft version and mod loader used for compatibility checks. |
+| `GET /api/mods/search?q=…&source=…&serverName=…` | Search a publisher; when `serverName` is provided, results are filtered for that server's exact version and loader. |
+| `GET /api/mods/:slug/compatible-versions?source=…&serverName=…` | List versions matching the server's exact Minecraft version and loader. |
+| `POST /api/servers/:name/mods/manage` | Install an exact publisher artifact (`{"source":"modrinth","projectId":"…","versionId":"…"}`). Compatibility and publisher-provided checksums are verified before writing. |
+| `GET /api/servers/:name/mods/updates` / `POST /api/servers/:name/mods/update` | Check for updates and update all installed publisher-managed mods, or only the requested `filenames`. |
+| `POST /api/servers/:name/mods/adopt` | Identify existing supported JARs by checksum. |
+| `PATCH /api/servers/:name/mods/installed/:filename/state` / `DELETE /api/servers/:name/mods/installed/:filename` | Disable/enable or delete a JAR. |
+| `GET/PUT /api/servers/:name/mods/installed/:filename/configs` | Read or set the config files associated with an installed mod. `PUT` accepts `{"files":["config/example.toml"]}`. |
+
+Mod search and installation use the publisher's exact artifacts; they do not modify the legacy project lists described above. Mod JAR and config changes report `restartRequired` where applicable.
 
 ### GET /api/servers/:name/mods
 

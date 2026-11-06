@@ -92,8 +92,18 @@ export class CurseForgeAdapter implements IModSourcePort {
     if (options.gameVersions?.[0]) params.set('gameVersion', options.gameVersions[0]);
     const loader = options.loaders?.[0]?.toLowerCase();
     if (loader && LOADER_TYPES[loader]) params.set('modLoaderType', String(LOADER_TYPES[loader]));
-    const response = await this.request<CurseForgeResponse<CfFile[]>>(`/mods/${id}/files`, params);
-    return Promise.all(response.data.map(async (file) => {
+    const files: CfFile[] = [];
+    let index = 0;
+    let totalCount = Number.POSITIVE_INFINITY;
+    while (index < totalCount && index < 10_000) {
+      params.set('index', String(index));
+      const response = await this.request<CurseForgeResponse<CfFile[]>>(`/mods/${id}/files`, params);
+      files.push(...response.data);
+      totalCount = Math.min(response.pagination?.totalCount ?? index + response.data.length, 10_000);
+      if (response.data.length === 0) break;
+      index += response.data.length;
+    }
+    return Promise.all(files.map(async (file) => {
       const downloadUrl = file.downloadUrl ?? (await this.request<CurseForgeResponse<string>>(`/mods/${id}/files/${file.id}/download-url`)).data;
       return this.toVersion(file, downloadUrl);
     }));
