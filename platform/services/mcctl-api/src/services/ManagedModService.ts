@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, s
 import { basename, join, relative, resolve } from 'node:path';
 import JSZip from 'jszip';
 import { parseEnvDocument } from '@minecraft-docker/shared/utils';
-import { ModSourceFactory, type ModFile, type ModProject, type ModVersion } from '@minecraft-docker/shared';
+import { EXISTING_SERVER_NAME_PATTERN, ModSourceFactory, type ModFile, type ModProject, type ModVersion } from '@minecraft-docker/shared';
 
 const MAX_MOD_BYTES = 100 * 1024 * 1024;
 const MAX_MOD_METADATA_BYTES = 128 * 1024;
@@ -51,6 +51,7 @@ export class ManagedModService {
   constructor(private readonly root: string) {}
 
   compatibility(serverName: string): ServerModCompatibility {
+    this.assertServerName(serverName);
     const configPath = join(this.root, 'servers', serverName, 'config.env');
     if (!existsSync(configPath)) throw new ModManagementError(`Configuration for '${serverName}' was not found.`, 404);
     const env = parseEnvDocument(readFileSync(configPath, 'utf8')).values;
@@ -565,8 +566,12 @@ export class ManagedModService {
   }
 
   private dataDir(serverName: string): string {
-    if (!/^[a-z0-9][a-z0-9_-]{0,62}$/i.test(serverName)) throw new ModManagementError('Invalid server name.', 400);
+    this.assertServerName(serverName);
     return join(this.root, 'servers', serverName, 'data');
+  }
+
+  private assertServerName(serverName: string): void {
+    if (!EXISTING_SERVER_NAME_PATTERN.test(serverName)) throw new ModManagementError('Invalid server name.', 400);
   }
 
   private safeFilename(filename: string): string {

@@ -529,6 +529,9 @@ const modsPlugin: FastifyPluginAsync = async (fastify: FastifyInstance) => {
       return reply.send(result);
     } catch (error) {
       fastify.log.error(error, 'Failed to search mods');
+      if (error instanceof ModManagementError) {
+        return reply.code(error.statusCode).send({ error: error.statusCode === 400 ? 'BadRequest' : 'Conflict', message: error.message });
+      }
       return reply.code(500).send({ error: 'InternalServerError', message: 'Failed to search mods' });
     }
   });
