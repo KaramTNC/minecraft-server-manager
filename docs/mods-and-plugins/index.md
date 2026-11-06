@@ -1,6 +1,16 @@
 # Mods and Plugins
 
-This guide covers installing mods and plugins for your Minecraft server using mcctl CLI.
+This guide covers installing mods and plugins for your Minecraft server using mcctl CLI and the Web Console.
+
+## Web Console mod manager
+
+On supported Fabric, Quilt, Forge, and NeoForge servers, open **Server → Mods** to search Modrinth or CurseForge, choose an exact version compatible with the server's pinned Minecraft version and loader, and install it. mcctl verifies the publisher's SHA-1 or SHA-512 checksum before writing a JAR. Required dependencies are installed with the selected mod when the publisher supplies compatible dependency metadata.
+
+The Mods tab lists JAR files, lets you check and apply one or all available updates, disable or delete files, and attach config files to a mod. The config editor keeps each file in its native text format. Changes to mod JARs and most mod configs need a server restart before they take effect. Existing Modrinth JARs can be matched to the publisher's exact version by checksum with **Identify existing**; unmatched files remain available for disable/delete and can be replaced by deleting the old file and installing a verified version from the publisher.
+
+CurseForge's public REST API requires an API key. Add it in the publisher selector in the Mods dialog; mcctl stores it in the ignored platform `.env` file and does not return it to the browser. The [CurseForge API Console](https://console.curseforge.com/) issues keys.
+
+Modrinth project settings, CurseForge project settings, and direct URLs configured with the legacy container environment variables remain separate from the exact-artifact manager. The Mods tab does not silently change those legacy lists.
 
 ## Overview
 

@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
  * Session cookie name used by Better Auth
  * This matches the default cookie name from better-auth
  */
-const SESSION_COOKIE_NAME = 'better-auth.session_token';
+const SESSION_COOKIE_NAMES = ['better-auth.session_token', '__Secure-better-auth.session_token'];
 
 /**
  * Routes that require authentication
@@ -29,8 +29,7 @@ const publicRoutes = ['/login', '/signup'];
  * Full session validation happens in pages/API routes with Node.js runtime
  */
 function hasSessionCookie(request: NextRequest): boolean {
-  const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME);
-  return !!sessionCookie?.value;
+  return SESSION_COOKIE_NAMES.some((name) => !!request.cookies.get(name)?.value);
 }
 
 /**

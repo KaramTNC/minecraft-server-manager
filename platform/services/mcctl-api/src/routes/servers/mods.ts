@@ -8,12 +8,18 @@ import {
   ServerSpecError,
 } from '@minecraft-docker/shared';
 import '@minecraft-docker/mod-source-modrinth';
+import '../../services/CurseForgeAdapter.js';
 import { EnvValueError } from '@minecraft-docker/shared/utils';
 import { writeAuditLog } from '../../services/audit-log-service.js';
 import { createModConfigService } from '../../services/ModConfigService.js';
+import { createManagedModService, ManagedModService, ModManagementError } from '../../services/ManagedModService.js';
+import { CurseForgeAdapter } from '../../services/CurseForgeAdapter.js';
 import { serverSpecFailure } from '../../lib/server-spec.js';
 import { ErrorResponseSchema, ServerNameParamsSchema, type ServerNameParams } from '../../schemas/server.js';
 import { config } from '../../config/index.js';
+import { applyEnvChanges, atomicWriteFileSync } from '@minecraft-docker/shared/utils';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { InstalledModEntry } from '../../services/ModConfigService.js';
 
 // ============================================================
@@ -34,7 +40,7 @@ interface RemoveModRoute {
 }
 
 interface SearchModsRoute {
-  Querystring: { q: string; limit?: number; offset?: number; type?: string };
+  Querystring: { q: string; limit?: number; offset?: number; type?: string; source?: string; serverName?: string };
 }
 
 interface GetProjectsRoute {
@@ -45,6 +51,29 @@ interface ModVersionsRoute {
   Params: { slug: string };
   Querystring: { source?: string };
 }
+
+interface CompatibleModVersionsRoute {
+  Params: { slug: string };
+  Querystring: { source?: string; serverName: string };
+}
+
+interface ModSourcesRoute { }
+interface CurseForgeKeyRoute { Body: { apiKey: string } }
+interface ManageModRoute {
+  Params: ServerNameParams;
+  Body: { source: string; projectId: string; versionId: string };
+}
+interface ModUpdateRoute {
+  Params: ServerNameParams;
+  Body?: { filenames?: string[] };
+}
+interface AdoptModsRoute { Params: ServerNameParams }
+interface ModStateRoute {
+  Params: ServerNameParams & { filename: string };
+  Body: { enabled: boolean };
+}
+interface ModFileRoute { Params: ServerNameParams & { filename: string } }
+interface ModConfigFilesRoute { Params: ServerNameParams & { filename: string }; Body: { files: string[] } }
 
 interface ModClientOnlyRoute {
   Params: { slug: string };
@@ -66,6 +95,157 @@ interface ToggleModExcludeRoute {
 
 const modsPlugin: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   const modConfigService = createModConfigService(config.mcctlRoot);
+  const managedMods = createManagedModService(config.mcctlRoot);
+
+  fastify.get<ModSourcesRoute>('/api/mods/sources', async (_request, reply) => {
+    const sources = await Promise.all(ModSourceFactory.getAllAdapters().map(async (adapter) => ({
+      id: adapter.sourceName,
+      name: adapter.displayName,
+      available: await adapter.isAvailable(),
+      requiresApiKey: adapter.sourceName === 'curseforge' && !process.env.CURSEFORGE_API_KEY,
+    })));
+    return reply.send({ sources });
+  });
+
+  fastify.put<CurseForgeKeyRoute>('/api/mods/sources/curseforge-key', {
+    schema: { tags: ['mods'], response: { 400: ErrorResponseSchema } },
+  }, async (request, reply) => {
+    const apiKey = request.body?.apiKey?.trim();
+    if (!apiKey || apiKey.length > 256 || /[\r\n\0]/.test(apiKey)) {
+      return reply.code(400).send({ error: 'BadRequest', message: 'Enter a valid CurseForge API key.' });
+    }
+    const envPath = join(config.mcctlRoot, '.env');
+    const oldText = existsSync(envPath) ? readFileSync(envPath, 'utf8') : '';
+    atomicWriteFileSync(envPath, applyEnvChanges(oldText, { set: { CURSEFORGE_API_KEY: apiKey } }), { mode: 0o600 });
+    process.env.CURSEFORGE_API_KEY = apiKey;
+    const adapter = ModSourceFactory.getOrNull('curseforge');
+    if (adapter instanceof CurseForgeAdapter) adapter.setApiKey(apiKey);
+    await writeAuditLog({ action: AuditActionEnum.PLATFORM_SETTINGS_UPDATE, actor: 'api:console', targetType: 'platform', targetName: 'CURSEFORGE_API_KEY', details: { configured: true }, status: 'success' });
+    return reply.send({ success: true, configured: true });
+  });
+
+  fastify.get<InstalledModsRoute>('/api/servers/:name/mods/compatibility', {
+    schema: { tags: ['servers', 'mods'], params: ServerNameParamsSchema, response: { 404: ErrorResponseSchema, 409: ErrorResponseSchema } },
+  }, async (request, reply) => {
+    if (!serverExists(request.params.name)) return reply.code(404).send({ error: 'NotFound', message: `Server '${request.params.name}' not found` });
+    try { return reply.send(managedMods.compatibility(request.params.name)); }
+    catch (error) { return reply.code(error instanceof ModManagementError ? error.statusCode : 500).send({ error: 'Conflict', message: (error as Error).message }); }
+  });
+
+  fastify.get<CompatibleModVersionsRoute>('/api/mods/:slug/compatible-versions', {
+    schema: { tags: ['mods'], response: { 400: ErrorResponseSchema, 404: ErrorResponseSchema, 409: ErrorResponseSchema, 500: ErrorResponseSchema } },
+  }, async (request, reply) => {
+    const { slug } = request.params;
+    const { serverName, source: sourceName = 'modrinth' } = request.query;
+    if (!serverName) return reply.code(400).send({ error: 'BadRequest', message: 'serverName is required.' });
+    if (!serverExists(serverName)) return reply.code(404).send({ error: 'NotFound', message: `Server '${serverName}' not found` });
+    try {
+      const compatibility = managedMods.compatibility(serverName);
+      const source = ModSourceFactory.get(sourceName);
+      const versions = await source.getVersions(slug, { gameVersions: [compatibility.gameVersion], loaders: [compatibility.loader] });
+      return reply.send({ source: source.sourceName, gameVersion: compatibility.gameVersion, loader: compatibility.loader,
+        versions: versions.filter((version) => version.gameVersions.some((item) => item.toLowerCase() === compatibility.gameVersion.toLowerCase()) &&
+          version.loaders.some((item) => item.toLowerCase() === compatibility.loader.toLowerCase())) });
+    } catch (error) {
+      const status = error instanceof ModManagementError ? error.statusCode : 500;
+      return reply.code(status).send({ error: status === 409 ? 'Conflict' : 'InternalServerError', message: (error as Error).message });
+    }
+  });
+
+  fastify.post<ManageModRoute>('/api/servers/:name/mods/manage', {
+    schema: { tags: ['servers', 'mods'], params: ServerNameParamsSchema, response: { 400: ErrorResponseSchema, 404: ErrorResponseSchema, 409: ErrorResponseSchema, 422: ErrorResponseSchema, 502: ErrorResponseSchema } },
+  }, async (request, reply) => {
+    const { name } = request.params;
+    if (!serverExists(name)) return reply.code(404).send({ error: 'NotFound', message: `Server '${name}' not found` });
+    const { source, projectId, versionId } = request.body ?? {};
+    if (!source || !projectId || !versionId) return reply.code(400).send({ error: 'BadRequest', message: 'source, projectId and versionId are required.' });
+    try {
+      const mod = await managedMods.install(name, source, projectId, versionId);
+      await writeAuditLog({ action: AuditActionEnum.MOD_ADD, actor: 'api:console', targetType: 'server', targetName: name, details: { source, projectId, versionId, filename: mod.filename }, status: 'success' });
+      return reply.code(201).send({ success: true, mod, restartRequired: true });
+    } catch (error) {
+      const status = error instanceof ModManagementError ? error.statusCode : 500;
+      return reply.code(status).send({ error: status === 404 ? 'NotFound' : status === 409 ? 'Conflict' : status === 422 ? 'UnprocessableEntity' : status === 502 ? 'BadGateway' : 'InternalServerError', message: (error as Error).message });
+    }
+  });
+
+  fastify.get<InstalledModsRoute>('/api/servers/:name/mods/updates', {
+    schema: { tags: ['servers', 'mods'], params: ServerNameParamsSchema, response: { 404: ErrorResponseSchema, 500: ErrorResponseSchema } },
+  }, async (request, reply) => {
+    if (!serverExists(request.params.name)) return reply.code(404).send({ error: 'NotFound', message: `Server '${request.params.name}' not found` });
+    try { return reply.send({ updates: await managedMods.checkUpdates(request.params.name) }); }
+    catch (error) { fastify.log.error(error, 'Failed to check mod updates'); return reply.code(500).send({ error: 'InternalServerError', message: (error as Error).message }); }
+  });
+
+  fastify.post<AdoptModsRoute>('/api/servers/:name/mods/adopt', {
+    schema: { tags: ['servers', 'mods'], params: ServerNameParamsSchema, response: { 404: ErrorResponseSchema, 409: ErrorResponseSchema, 500: ErrorResponseSchema } },
+  }, async (request, reply) => {
+    const { name } = request.params;
+    if (!serverExists(name)) return reply.code(404).send({ error: 'NotFound', message: `Server '${name}' not found` });
+    try {
+      const result = await managedMods.adoptExisting(name);
+      await writeAuditLog({ action: AuditActionEnum.MOD_ADD, actor: 'api:console', targetType: 'server', targetName: name, details: { adoptedCount: result.adopted.length, unrecognizedCount: result.unrecognized.length }, status: 'success' });
+      return reply.send(result);
+    } catch (error) {
+      const status = error instanceof ModManagementError ? error.statusCode : 500;
+      return reply.code(status).send({ error: status === 409 ? 'Conflict' : 'InternalServerError', message: (error as Error).message });
+    }
+  });
+
+  fastify.post<ModUpdateRoute>('/api/servers/:name/mods/update', {
+    schema: { tags: ['servers', 'mods'], params: ServerNameParamsSchema, response: { 400: ErrorResponseSchema, 404: ErrorResponseSchema, 409: ErrorResponseSchema, 422: ErrorResponseSchema, 502: ErrorResponseSchema } },
+  }, async (request, reply) => {
+    if (!serverExists(request.params.name)) return reply.code(404).send({ error: 'NotFound', message: `Server '${request.params.name}' not found` });
+    try { return reply.send({ success: true, ...(await managedMods.update(request.params.name, request.body?.filenames)), restartRequired: true }); }
+    catch (error) { const status = error instanceof ModManagementError ? error.statusCode : 500; return reply.code(status).send({ error: status === 404 ? 'NotFound' : status === 409 ? 'Conflict' : status === 422 ? 'UnprocessableEntity' : status === 502 ? 'BadGateway' : 'InternalServerError', message: (error as Error).message }); }
+  });
+
+  fastify.patch<ModStateRoute>('/api/servers/:name/mods/installed/:filename/state', {
+    schema: { tags: ['servers', 'mods'], params: ServerNameParamsSchema, response: { 400: ErrorResponseSchema, 404: ErrorResponseSchema, 409: ErrorResponseSchema } },
+  }, async (request, reply) => {
+    if (!serverExists(request.params.name)) return reply.code(404).send({ error: 'NotFound', message: `Server '${request.params.name}' not found` });
+    if (typeof request.body?.enabled !== 'boolean') return reply.code(400).send({ error: 'BadRequest', message: 'enabled must be a boolean.' });
+    try { return reply.send({ success: true, mod: managedMods.setEnabled(request.params.name, request.params.filename, request.body.enabled), restartRequired: true }); }
+    catch (error) { const status = error instanceof ModManagementError ? error.statusCode : 500; return reply.code(status).send({ error: status === 404 ? 'NotFound' : status === 409 ? 'Conflict' : 'BadRequest', message: (error as Error).message }); }
+  });
+
+  fastify.delete<ModFileRoute>('/api/servers/:name/mods/installed/:filename', {
+    schema: { tags: ['servers', 'mods'], params: ServerNameParamsSchema, response: { 400: ErrorResponseSchema, 404: ErrorResponseSchema, 409: ErrorResponseSchema } },
+  }, async (request, reply) => {
+    if (!serverExists(request.params.name)) return reply.code(404).send({ error: 'NotFound', message: `Server '${request.params.name}' not found` });
+    try { managedMods.delete(request.params.name, request.params.filename); return reply.send({ success: true, deleted: request.params.filename, restartRequired: true }); }
+    catch (error) { const status = error instanceof ModManagementError ? error.statusCode : 500; return reply.code(status).send({ error: status === 404 ? 'NotFound' : status === 409 ? 'Conflict' : 'BadRequest', message: (error as Error).message }); }
+  });
+
+  fastify.get<ModFileRoute>('/api/servers/:name/mods/installed/:filename/configs', {
+    schema: { tags: ['servers', 'mods'], params: ServerNameParamsSchema, response: { 404: ErrorResponseSchema } },
+  }, async (request, reply) => {
+    if (!serverExists(request.params.name)) return reply.code(404).send({ error: 'NotFound', message: `Server '${request.params.name}' not found` });
+    try {
+      const mod = managedMods.list(request.params.name).find((entry) => entry.filename === request.params.filename);
+      if (!mod) return reply.code(404).send({ error: 'NotFound', message: `Mod '${request.params.filename}' was not found.` });
+      return reply.send({ files: managedMods.listConfigFiles(request.params.name), selected: mod.configFiles ?? [] });
+    } catch (error) {
+      const status = error instanceof ModManagementError ? error.statusCode : 500;
+      return reply.code(status).send({ error: 'InternalServerError', message: (error as Error).message });
+    }
+  });
+
+  fastify.put<ModConfigFilesRoute>('/api/servers/:name/mods/installed/:filename/configs', {
+    schema: { tags: ['servers', 'mods'], params: ServerNameParamsSchema, response: { 400: ErrorResponseSchema, 404: ErrorResponseSchema } },
+  }, async (request, reply) => {
+    if (!serverExists(request.params.name)) return reply.code(404).send({ error: 'NotFound', message: `Server '${request.params.name}' not found` });
+    if (!Array.isArray(request.body?.files) || request.body.files.some((item) => typeof item !== 'string')) {
+      return reply.code(400).send({ error: 'BadRequest', message: 'files must be an array of config file paths.' });
+    }
+    try {
+      const files = managedMods.setConfigFiles(request.params.name, request.params.filename, request.body.files);
+      return reply.send({ success: true, files });
+    } catch (error) {
+      const status = error instanceof ModManagementError ? error.statusCode : 500;
+      return reply.code(status).send({ error: status === 404 ? 'NotFound' : 'BadRequest', message: (error as Error).message });
+    }
+  });
 
   /**
    * GET /api/servers/:name/mods
@@ -283,7 +463,9 @@ const modsPlugin: FastifyPluginAsync = async (fastify: FastifyInstance) => {
             iconUrl: p.iconUrl,
             author: p.author,
             categories: p.categories,
-            sourceUrl: `https://modrinth.com/mod/${p.slug}`,
+            sourceUrl: source.sourceName === 'curseforge'
+              ? `https://www.curseforge.com/minecraft/mc-mods/${p.slug}`
+              : `https://modrinth.com/mod/${p.slug}`,
           } : null;
         }
       } else {
@@ -302,7 +484,9 @@ const modsPlugin: FastifyPluginAsync = async (fastify: FastifyInstance) => {
             iconUrl: p.iconUrl,
             author: p.author,
             categories: p.categories,
-            sourceUrl: `https://modrinth.com/mod/${p.slug}`,
+            sourceUrl: source.sourceName === 'curseforge'
+              ? `https://www.curseforge.com/minecraft/mc-mods/${p.slug}`
+              : `https://modrinth.com/mod/${p.slug}`,
           } : null;
         }
       }
@@ -316,7 +500,7 @@ const modsPlugin: FastifyPluginAsync = async (fastify: FastifyInstance) => {
 
   /**
    * GET /api/mods/search
-   * Search mods via Modrinth
+   * Search mods through a registered publisher adapter
    */
   fastify.get<SearchModsRoute>('/api/mods/search', {
     schema: {
@@ -327,17 +511,19 @@ const modsPlugin: FastifyPluginAsync = async (fastify: FastifyInstance) => {
       },
     },
   }, async (request: FastifyRequest<SearchModsRoute>, reply: FastifyReply) => {
-    const { q, limit, offset, type } = request.query;
+    const { q, limit, offset, type, source: sourceName = 'modrinth', serverName } = request.query;
 
     try {
       if (!q || !q.trim()) {
         return reply.code(400).send({ error: 'BadRequest', message: 'Query parameter "q" is required' });
       }
 
-      const source = ModSourceFactory.get('modrinth');
+      const source = ModSourceFactory.get(sourceName);
+      const compatibility = serverName ? managedMods.compatibility(serverName) : undefined;
       const result = await source.search(q, {
         limit: limit != null ? Number(limit) : 10,
         offset: offset != null ? Number(offset) : 0,
+        ...(compatibility ? { gameVersions: [compatibility.gameVersion], loaders: [compatibility.loader] } : {}),
         // Restrict to modpacks when requested (used by Create Server autocomplete)
         ...(type === 'modpack' ? { projectType: 'modpack' as const } : {}),
       });
@@ -466,7 +652,8 @@ const modsPlugin: FastifyPluginAsync = async (fastify: FastifyInstance) => {
         return reply.code(404).send({ error: 'NotFound', message: `Server '${name}' not found` });
       }
 
-      const mods: InstalledModEntry[] = modConfigService.getInstalledModJars(name);
+      const exclusions = new Map(modConfigService.getInstalledModJars(name).map((entry) => [entry.filename, entry.excluded]));
+      const mods: InstalledModEntry[] = managedMods.list(name).map((entry) => ({ ...entry, excluded: exclusions.get(entry.filename) ?? false }));
       return reply.send({ mods });
     } catch (error) {
       fastify.log.error(error, 'Failed to list installed mod jars');

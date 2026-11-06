@@ -99,45 +99,10 @@ const LEGACY_ENV_KEYS: Partial<Record<keyof ServerConfig, string>> = {
 /**
  * Fields that require a server restart to take effect
  */
-const RESTART_REQUIRED_FIELDS: (keyof ServerConfig)[] = [
-  // JVM / Docker-level
-  'memory',
-  'initMemory',
-  'maxMemory',
-  'useAikarFlags',
-  'jvmXxOpts',
-  // Security
-  'onlineMode',
-  'enableWhitelist',
-  'enforceWhitelist',
-  'enforceSecureProfile',
-  // World generation (only on new world)
-  'level',
-  'seed',
-  'levelType',
-  // Auto-pause / Auto-stop
-  'enableAutopause',
-  'enableAutostop',
-  // Native Auto-pause (MC 1.21.2+)
-  'pauseWhenEmptySeconds',
-  // RCON
-  'enableRcon',
-  'rconPassword',
-  'rconPort',
-  // System
-  'tz',
-  'uid',
-  'gid',
-  'stopDuration',
-  // Remote Access
-  'websocketConsole',
-  'enableSsh',
-  // Configuration Repositories (applied at container startup)
-  'paperConfigRepo',
-  'pufferfishConfigRepo',
-  'purpurConfigRepo',
-  'serverPropertiesRepoUrl',
-];
+// Every configurable value is written into config.env and consumed by the
+// container at startup. Treat the complete field map as restart-required so
+// the Console never silently saves a setting that the live server has not read.
+const RESTART_REQUIRED_FIELDS = Object.keys(CONFIG_FIELD_MAP) as (keyof ServerConfig)[];
 
 /**
  * Boolean fields and their env file format (lowercase or UPPERCASE)

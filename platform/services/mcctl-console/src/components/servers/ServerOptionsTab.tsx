@@ -22,14 +22,24 @@ import { HostnameSection } from './HostnameSection';
 import { SettingsSection, StickyActionBar, RestartConfirmDialog, sectionConfigs } from './settings';
 import type { ServerConfig, UpdateServerConfigRequest } from '@/ports/api/IMcctlApiClient';
 
-// Fields that require restart (must match backend RESTART_REQUIRED_FIELDS)
+// Every supported setting is applied through config.env and read by the server
+// container at startup. Keep this list aligned with ConfigService's field map.
 const RESTART_REQUIRED_FIELDS: (keyof ServerConfig)[] = [
-  'memory', 'initMemory', 'maxMemory', 'useAikarFlags', 'jvmXxOpts',
-  'onlineMode', 'enableWhitelist', 'enforceWhitelist', 'enforceSecureProfile',
-  'level', 'seed', 'levelType',
-  'enableAutopause', 'enableAutostop',
-  'enableRcon', 'rconPassword', 'rconPort',
-  'tz', 'uid', 'gid', 'stopDuration',
+  'difficulty', 'gameMode', 'maxPlayers', 'pvp', 'forceGamemode', 'hardcore',
+  'allowFlight', 'allowNether', 'enableCommandBlock', 'spawnProtection',
+  'spawnAnimals', 'spawnMonsters', 'spawnNpcs', 'motd', 'level', 'levelType',
+  'seed', 'generateStructures', 'maxWorldSize', 'icon', 'onlineMode',
+  'enableWhitelist', 'enforceWhitelist', 'enforceSecureProfile', 'memory',
+  'useAikarFlags', 'viewDistance', 'simulationDistance', 'maxTickTime',
+  'initMemory', 'maxMemory', 'jvmXxOpts', 'enableAutopause',
+  'autopauseTimeoutEst', 'autopauseTimeoutInit', 'autopausePeriod',
+  'enableAutostop', 'autostopTimeoutEst', 'pauseWhenEmptySeconds', 'tz',
+  'resourcePack', 'enableRcon', 'resourcePackSha1', 'resourcePackEnforce',
+  'resourcePackPrompt', 'rconPassword', 'rconPort', 'stopDuration', 'uid',
+  'gid', 'websocketConsole', 'websocketAddress', 'websocketPassword',
+  'websocketDisableAuthentication', 'websocketAllowedOrigins',
+  'websocketLogBufferSize', 'enableSsh', 'paperConfigRepo', 'pufferfishConfigRepo',
+  'purpurConfigRepo', 'serverPropertiesRepoUrl',
 ];
 
 interface ServerOptionsTabProps {

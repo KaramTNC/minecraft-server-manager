@@ -11,7 +11,7 @@ import { execCommandStreaming } from '../process.js';
 import { resolveRegionDirs } from './dimensionRegions.js';
 
 /** BlueMap CLI image, built from `docker/bluemap/Dockerfile` (same version as its BLUEMAP_VERSION). */
-const IMAGE = 'mcctl-bluemap:5.22';
+const IMAGE = 'mcctl-bluemap:5.29';
 
 /**
  * Memory ceiling for BlueMap containers (#662). The JVM only takes 25% of the

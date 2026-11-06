@@ -174,6 +174,13 @@ export class McctlApiAdapter implements IMcctlApiClient {
     return response.json() as Promise<T>;
   }
 
+  async proxyRequest<T>(endpoint: string, method: string, body?: unknown): Promise<T> {
+    return this.fetch<T>(endpoint, {
+      method,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  }
+
   // ============================================================
   // Server Operations
   // ============================================================
@@ -633,9 +640,11 @@ export class McctlApiAdapter implements IMcctlApiClient {
     );
   }
 
-  async searchMods(query: string, limit: number = 10, offset: number = 0, type?: string): Promise<ModSearchResponse> {
+  async searchMods(query: string, limit: number = 10, offset: number = 0, type?: string, source?: string, serverName?: string): Promise<ModSearchResponse> {
     const params = new URLSearchParams({ q: query, limit: String(limit), offset: String(offset) });
     if (type) params.set('type', type);
+    if (source) params.set('source', source);
+    if (serverName) params.set('serverName', serverName);
     return this.fetch<ModSearchResponse>(`/api/mods/search?${params}`);
   }
 

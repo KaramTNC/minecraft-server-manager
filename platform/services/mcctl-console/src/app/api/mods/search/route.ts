@@ -1,6 +1,6 @@
 /**
  * Mod Search API Route
- * GET /api/mods/search?q=...&limit=...&offset=...
+ * GET /api/mods/search?q=...&limit=...&offset=...&source=...&serverName=...
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/mods/search
- * Search for mods on Modrinth
+ * Search for mods on a supported publisher
  */
 export async function GET(request: NextRequest) {
   try {
@@ -23,6 +23,8 @@ export async function GET(request: NextRequest) {
     const limit = searchParams.get('limit');
     const offset = searchParams.get('offset');
     const type = searchParams.get('type');
+    const source = searchParams.get('source');
+    const serverName = searchParams.get('serverName');
 
     if (!q) {
       return NextResponse.json(
@@ -36,7 +38,9 @@ export async function GET(request: NextRequest) {
       q,
       limit ? parseInt(limit, 10) : undefined,
       offset ? parseInt(offset, 10) : undefined,
-      type ?? undefined
+      type ?? undefined,
+      source ?? undefined,
+      serverName ?? undefined
     );
 
     return NextResponse.json(data);

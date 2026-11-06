@@ -147,6 +147,14 @@ export class ModrinthAdapter implements IModSourcePort {
     return rawVersions.map(v => this.mapper.toVersion(v));
   }
 
+  async findByFileHash(hash: string, algorithm: 'sha1' = 'sha1'): Promise<{ project: ModProject; version: ModVersion } | null> {
+    const rawVersion = await this.apiClient.getVersionByFileHash(hash, algorithm);
+    if (!rawVersion) return null;
+    const project = await this.getProject(rawVersion.project_id);
+    if (!project) return null;
+    return { project, version: this.mapper.toVersion(rawVersion) };
+  }
+
   /**
    * Detect client-only mods bundled in a modpack.
    *

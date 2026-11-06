@@ -87,6 +87,9 @@ export interface IModSourcePort {
    */
   getModpackClientOnlyMods?(slugOrId: string, versionId?: string): Promise<string[]>;
 
+  /** Find a published artifact from its cryptographic file hash, when supported. */
+  findByFileHash?(hash: string, algorithm: 'sha1'): Promise<{ project: ModProject; version: ModVersion } | null>;
+
   /**
    * Get the environment variable key for this source
    * Used for config.env configuration

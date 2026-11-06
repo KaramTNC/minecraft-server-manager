@@ -1,607 +1,331 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
-import Button from '@mui/material/Button';
-import IconButton from '@mui/material/IconButton';
-import TextField from '@mui/material/TextField';
-import Divider from '@mui/material/Divider';
+import { useEffect, useMemo, useState } from 'react';
 import Alert from '@mui/material/Alert';
-import CircularProgress from '@mui/material/CircularProgress';
-import Snackbar from '@mui/material/Snackbar';
-import Dialog from '@mui/material/Dialog';
-import DialogTitle from '@mui/material/DialogTitle';
-import DialogContent from '@mui/material/DialogContent';
 import Avatar from '@mui/material/Avatar';
-import InputAdornment from '@mui/material/InputAdornment';
-import Skeleton from '@mui/material/Skeleton';
+import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
+import Checkbox from '@mui/material/Checkbox';
+import Chip from '@mui/material/Chip';
+import CircularProgress from '@mui/material/CircularProgress';
+import Dialog from '@mui/material/Dialog';
+import DialogActions from '@mui/material/DialogActions';
+import DialogContent from '@mui/material/DialogContent';
+import DialogTitle from '@mui/material/DialogTitle';
+import Divider from '@mui/material/Divider';
+import FormControl from '@mui/material/FormControl';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import IconButton from '@mui/material/IconButton';
+import InputLabel from '@mui/material/InputLabel';
+import MenuItem from '@mui/material/MenuItem';
+import Select from '@mui/material/Select';
+import Snackbar from '@mui/material/Snackbar';
+import Switch from '@mui/material/Switch';
+import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
+import Typography from '@mui/material/Typography';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
-import SearchIcon from '@mui/icons-material/Search';
-import CloseIcon from '@mui/icons-material/Close';
 import ExtensionIcon from '@mui/icons-material/Extension';
-import DownloadIcon from '@mui/icons-material/Download';
-import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import Switch from '@mui/material/Switch';
-import FormControlLabel from '@mui/material/FormControlLabel';
-import FolderZipIcon from '@mui/icons-material/FolderZip';
-import BlockIcon from '@mui/icons-material/Block';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import SettingsIcon from '@mui/icons-material/Settings';
+import UpdateIcon from '@mui/icons-material/Update';
 import { BentoPanel } from '@/components/bento';
-import { useServerMods, useModSearch, useModProjects, useAddMod, useRemoveMod, useInstalledMods, useToggleModExclude } from '@/hooks/useMods';
-import type { ModProjectDetail, InstalledModEntry } from '@/ports/api/IMcctlApiClient';
+import { TextEditor } from './files/TextEditor';
+import {
+  useCompatibleModVersions,
+  useAdoptExistingMods,
+  useDeleteManagedMod,
+  useInstallManagedMod,
+  useManagedModUpdates,
+  useModCompatibility,
+  useModConfigFiles,
+  useModSearch,
+  useModSources,
+  useSaveCurseForgeApiKey,
+  useSaveModConfigFiles,
+  useSetManagedModEnabled,
+  useUpdateManagedMods,
+  useInstalledMods,
+} from '@/hooks/useMods';
+import type { InstalledModEntry, ModSearchHit } from '@/ports/api/IMcctlApiClient';
 
-interface ServerModsTabProps {
-  serverName: string;
-}
-
-interface SnackbarState {
-  open: boolean;
-  message: string;
-  severity: 'success' | 'error' | 'warning' | 'info';
-}
-
-function formatDownloads(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
-}
-
-function InstalledModCard({
-  slug,
-  detail,
-  isLoading,
-  onRemove,
-  isRemoving,
-}: {
-  slug: string;
-  detail: ModProjectDetail | null | undefined;
-  isLoading: boolean;
-  onRemove: (slug: string) => void;
-  isRemoving: boolean;
-}) {
-  // Loading skeleton
-  if (isLoading) {
-    return (
-      <BentoPanel sx={{ borderRadius: 2 }}>
-        <Box sx={{ py: 1.5, px: 2 }}>
-          <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
-            <Skeleton variant="rounded" width={40} height={40} />
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Skeleton variant="text" width="40%" height={24} />
-              <Skeleton variant="text" width="80%" height={20} />
-              <Skeleton variant="text" width="30%" height={16} />
-            </Box>
-          </Box>
-        </Box>
-      </BentoPanel>
-    );
-  }
-
-  // Fallback card (API failed or project not found)
-  if (!detail) {
-    return (
-      <BentoPanel sx={{ borderRadius: 2 }}>
-        <Box sx={{ py: 1.5, px: 2 }}>
-          <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center' }}>
-            <Avatar variant="rounded" sx={{ width: 40, height: 40, bgcolor: 'action.hover' }}>
-              <ExtensionIcon />
-            </Avatar>
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography variant="subtitle2" noWrap>
-                {slug}
-              </Typography>
-            </Box>
-            <Tooltip title="View on Modrinth">
-              <IconButton
-                size="small"
-                href={`https://modrinth.com/mod/${slug}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                component="a"
-              >
-                <OpenInNewIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title="Remove">
-              <IconButton
-                size="small"
-                onClick={() => onRemove(slug)}
-                disabled={isRemoving}
-                color="error"
-              >
-                <DeleteIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          </Box>
-        </Box>
-      </BentoPanel>
-    );
-  }
-
-  // Full detail card
-  return (
-    <BentoPanel sx={{ borderRadius: 2 }}>
-      <Box sx={{ py: 1.5, px: 2 }}>
-        <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
-          <Avatar
-            src={detail.iconUrl || undefined}
-            variant="rounded"
-            sx={{ width: 40, height: 40, bgcolor: 'action.hover' }}
-          >
-            <ExtensionIcon />
-          </Avatar>
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Typography variant="subtitle2" noWrap>
-                {detail.title}
-              </Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center', ml: 1, flexShrink: 0 }}>
-                <Tooltip title="View on Modrinth">
-                  <IconButton
-                    size="small"
-                    href={detail.sourceUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    component="a"
-                  >
-                    <OpenInNewIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-                <Tooltip title="Remove">
-                  <IconButton
-                    size="small"
-                    onClick={() => onRemove(slug)}
-                    disabled={isRemoving}
-                    color="error"
-                  >
-                    <DeleteIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-              </Box>
-            </Box>
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              sx={{
-                mt: 0.25,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                display: '-webkit-box',
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: 'vertical',
-              }}
-            >
-              {detail.description}
-            </Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
-                <DownloadIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
-                <Typography variant="caption" color="text.disabled">
-                  {formatDownloads(detail.downloads)}
-                </Typography>
-              </Box>
-              {detail.author && (
-                <Typography variant="caption" color="text.disabled">
-                  by {detail.author}
-                </Typography>
-              )}
-            </Box>
-          </Box>
-        </Box>
-      </Box>
-    </BentoPanel>
-  );
-}
+interface ServerModsTabProps { serverName: string }
 
 export function ServerModsTab({ serverName }: ServerModsTabProps) {
-  const { data: modsData, isLoading, error } = useServerMods(serverName);
-  const { data: installedModsData, isLoading: isInstalledLoading, refetch: refetchInstalled } = useInstalledMods(serverName);
-  const addMod = useAddMod();
-  const removeMod = useRemoveMod();
-  const toggleExclude = useToggleModExclude();
+  const { data: modsData, isLoading: modsLoading, error: modsError, refetch: refetchMods } = useInstalledMods(serverName);
+  const { data: compat } = useModCompatibility(serverName);
+  const { data: sourcesData } = useModSources();
+  const { data: updatesData, refetch: checkUpdates, isFetching: checkingUpdates } = useManagedModUpdates(serverName);
+  const install = useInstallManagedMod();
+  const adopt = useAdoptExistingMods();
+  const update = useUpdateManagedMods();
+  const setEnabled = useSetManagedModEnabled();
+  const deleteMod = useDeleteManagedMod();
+  const saveKey = useSaveCurseForgeApiKey();
 
   const [searchOpen, setSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedQuery, setDebouncedQuery] = useState('');
-  const [modChanged, setModChanged] = useState(false);
-  const [excludeChanged, setExcludeChanged] = useState(false);
-  const [snackbar, setSnackbar] = useState<SnackbarState>({
-    open: false,
-    message: '',
-    severity: 'info',
+  const [source, setSource] = useState('modrinth');
+  const [query, setQuery] = useState('');
+  const [selectedProject, setSelectedProject] = useState<ModSearchHit | null>(null);
+  const [selectedVersion, setSelectedVersion] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState<InstalledModEntry | null>(null);
+  const [configMod, setConfigMod] = useState<InstalledModEntry | null>(null);
+  const [selectedConfigs, setSelectedConfigs] = useState<string[]>([]);
+  const [editingConfig, setEditingConfig] = useState<string | null>(null);
+  const [curseForgeKey, setCurseForgeKey] = useState('');
+  const [notice, setNotice] = useState<{ text: string; severity: 'success' | 'error' | 'info' } | null>(null);
+
+  const { data: searchData, isLoading: searching } = useModSearch(query, {
+    source, serverName, limit: 15, enabled: searchOpen && query.trim().length > 0,
   });
+  const selectedProjectId = selectedProject?.sourceId ?? selectedProject?.slug ?? '';
+  const { data: versionData, isLoading: loadingVersions } = useCompatibleModVersions(
+    selectedProjectId, source, serverName, searchOpen && !!selectedProjectId,
+  );
+  const { data: configData, isLoading: loadingConfig } = useModConfigFiles(serverName, configMod?.filename ?? null);
+  const saveConfigs = useSaveModConfigFiles();
 
-  const { data: searchData, isLoading: isSearching } = useModSearch(debouncedQuery, {
-    limit: 10,
-    enabled: searchOpen && debouncedQuery.length > 0,
-  });
+  const updateByFilename = useMemo(() => new Map((updatesData?.updates ?? []).map((item) => [item.filename, item])), [updatesData]);
+  const availableSource = sourcesData?.sources.find((item) => item.id === source);
 
-  // Collect all installed mod slugs for lookup and "already installed" check
-  const installedSlugs = new Set<string>();
-  if (modsData?.mods) {
-    for (const slugs of Object.values(modsData.mods)) {
-      for (const s of slugs) {
-        installedSlugs.add(s);
-      }
-    }
-  }
-
-  const allSlugs = Array.from(installedSlugs);
-
-  // Fetch detailed project info for installed mods
-  const { data: projectsData, isLoading: isProjectsLoading } = useModProjects(allSlugs, {
-    enabled: allSlugs.length > 0,
-  });
-
-  // Debounce search query
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedQuery(searchQuery);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
-
-  const handleRemoveMod = useCallback(async (slug: string) => {
-    try {
-      await removeMod.mutateAsync({ serverName, slug });
-      setModChanged(true);
-      setSnackbar({ open: true, message: `Removed ${slug}`, severity: 'success' });
-    } catch (err) {
-      setSnackbar({
-        open: true,
-        message: err instanceof Error ? err.message : 'Failed to remove mod',
-        severity: 'error',
-      });
+    if (!versionData?.versions.length) {
+      setSelectedVersion('');
+      return;
     }
-  }, [removeMod, serverName]);
-
-  const handleAddMod = useCallback(async (slug: string) => {
-    try {
-      await addMod.mutateAsync({ serverName, slugs: [slug] });
-      setModChanged(true);
-      setSnackbar({ open: true, message: `Added ${slug}`, severity: 'success' });
-    } catch (err) {
-      setSnackbar({
-        open: true,
-        message: err instanceof Error ? err.message : 'Failed to add mod',
-        severity: 'error',
-      });
+    if (!versionData.versions.some((version) => version.id === selectedVersion)) {
+      const preferred = versionData.versions.find((version) => version.versionType === 'release') ?? versionData.versions[0];
+      setSelectedVersion(preferred?.id ?? '');
     }
-  }, [addMod, serverName]);
+  }, [versionData, selectedVersion]);
 
-  const handleToggleExclude = useCallback(async (entry: InstalledModEntry) => {
-    const newExcluded = !entry.excluded;
+  useEffect(() => {
+    setSelectedConfigs(configData?.selected ?? []);
+  }, [configData?.selected, configMod?.filename]);
+
+  const showError = (error: unknown, fallback: string) => setNotice({
+    text: error instanceof Error ? error.message : fallback, severity: 'error',
+  });
+
+  const handleInstall = async () => {
+    if (!selectedProject || !selectedVersion) return;
     try {
-      await toggleExclude.mutateAsync({ serverName, filename: entry.filename, excluded: newExcluded });
-      setExcludeChanged(true);
-      setSnackbar({
-        open: true,
-        message: newExcluded
-          ? `Excluded ${entry.filename} — restart required`
-          : `Included ${entry.filename} — restart required`,
-        severity: 'info',
+      await install.mutateAsync({
+        serverName, source, projectId: selectedProject.sourceId ?? selectedProject.slug, versionId: selectedVersion,
       });
-    } catch (err) {
-      setSnackbar({
-        open: true,
-        message: err instanceof Error ? err.message : 'Failed to update exclude',
-        severity: 'error',
-      });
-    }
-  }, [toggleExclude, serverName]);
+      setNotice({ text: `${selectedProject.title} installed and checksum verified. Restart the server to load it.`, severity: 'success' });
+      setSelectedProject(null);
+      setQuery('');
+      setSearchOpen(false);
+      void refetchMods();
+    } catch (error) { showError(error, 'Mod installation failed.'); }
+  };
 
-  // Loading state
-  if (isLoading) {
-    return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
-        <CircularProgress />
-      </Box>
-    );
-  }
+  const handleToggle = async (mod: InstalledModEntry) => {
+    try {
+      await setEnabled.mutateAsync({ serverName, filename: mod.filename, enabled: !mod.enabled });
+      setNotice({ text: `${mod.title || mod.filename} ${mod.enabled ? 'disabled' : 'enabled'}. Restart the server to apply the change.`, severity: 'info' });
+      void refetchMods();
+    } catch (error) { showError(error, 'Unable to change mod state.'); }
+  };
 
-  // Error state
-  if (error) {
-    return (
-      <Alert severity="error" sx={{ mt: 2 }}>
-        Failed to load mods: {error.message}
-      </Alert>
-    );
-  }
+  const handleDelete = async () => {
+    if (!confirmDelete) return;
+    try {
+      await deleteMod.mutateAsync({ serverName, filename: confirmDelete.filename });
+      setNotice({ text: `${confirmDelete.title || confirmDelete.filename} deleted. Restart the server to apply the change.`, severity: 'info' });
+      setConfirmDelete(null);
+      void refetchMods();
+    } catch (error) { showError(error, 'Unable to delete mod.'); }
+  };
 
-  const hasAnyMods = installedSlugs.size > 0;
+  const openConfig = (mod: InstalledModEntry) => {
+    setConfigMod(mod);
+    setEditingConfig(null);
+    setSelectedConfigs(mod.configFiles ?? []);
+  };
+
+  const saveCurseForgeKey = async () => {
+    try {
+      await saveKey.mutateAsync({ apiKey: curseForgeKey });
+      setCurseForgeKey('');
+      setNotice({ text: 'CurseForge is connected. The API key is stored in the private platform environment file.', severity: 'success' });
+    } catch (error) { showError(error, 'Unable to save CurseForge API key.'); }
+  };
+
+  const handleConfigSave = async () => {
+    if (!configMod) return;
+    try {
+      await saveConfigs.mutateAsync({ serverName, filename: configMod.filename, files: selectedConfigs });
+      setNotice({ text: 'Mod configuration links saved. Open a file to edit its native format.', severity: 'success' });
+    } catch (error) { showError(error, 'Unable to save mod configuration links.'); }
+  };
+
+  const updateAll = async () => {
+    const targets = (updatesData?.updates ?? []).filter((item) => item.updateAvailable).map((item) => item.filename);
+    if (!targets.length) return;
+    try {
+      const result = await update.mutateAsync({ serverName, filenames: targets }) as { updated?: InstalledModEntry[]; unchanged?: string[] };
+      setNotice({ text: `${result.updated?.length ?? 0} mod(s) updated. Restart the server to load them.`, severity: 'success' });
+    } catch (error) { showError(error, 'Mod update failed.'); }
+  };
+
+  if (modsLoading) return <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}><CircularProgress /></Box>;
+  if (modsError) return <Alert severity="error">Failed to load mods: {modsError.message}</Alert>;
+
+  const mods = modsData?.mods ?? [];
+  const updateCount = updatesData?.updates.filter((item) => item.updateAvailable).length ?? 0;
+  const untrackedCount = mods.filter((mod) => !mod.managed).length;
 
   return (
     <Box>
-      {/* Restart Alert — mod config change */}
-      {modChanged && (
-        <Alert severity="info" sx={{ mb: 2 }}>
-          Restart the server to apply mod changes.
-        </Alert>
-      )}
-
-      {/* Restart Alert — exclude change */}
-      {excludeChanged && !modChanged && (
-        <Alert severity="warning" sx={{ mb: 2 }}>
-          Mod exclude list updated. Restart the server for changes to take effect.
-        </Alert>
-      )}
-
-      {/* Installed Mods */}
       <BentoPanel>
         <Box sx={{ p: 2.5 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-            <Typography variant="h6" fontWeight={600}>
-              Installed Mods
-            </Typography>
-            <Button
-              variant="contained"
-              size="small"
-              startIcon={<AddIcon />}
-              onClick={() => {
-                setSearchQuery('');
-                setDebouncedQuery('');
-                setSearchOpen(true);
-              }}
-            >
-              Add Mods
-            </Button>
-          </Box>
-          <Divider sx={{ mb: 2 }} />
-
-          {!hasAnyMods ? (
-            <Box sx={{ textAlign: 'center', py: 4 }}>
-              <ExtensionIcon sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
-              <Typography variant="body1" color="text.secondary">
-                No mods installed
-              </Typography>
-              <Typography variant="body2" color="text.disabled" sx={{ mt: 0.5 }}>
-                Click &quot;Add Mods&quot; to search and install mods from Modrinth
-              </Typography>
-            </Box>
-          ) : (
-            Object.entries(modsData!.mods).map(([source, slugs]) => (
-              <Box key={source} sx={{ mb: 2 }}>
-                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, textTransform: 'capitalize' }}>
-                  {source}
-                </Typography>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                  {slugs.map((slug) => (
-                    <InstalledModCard
-                      key={slug}
-                      slug={slug}
-                      detail={projectsData?.projects?.[slug]}
-                      isLoading={isProjectsLoading}
-                      onRemove={handleRemoveMod}
-                      isRemoving={removeMod.isPending}
-                    />
-                  ))}
-                </Box>
-              </Box>
-            ))
-          )}
-        </Box>
-      </BentoPanel>
-
-      {/* Installed Jar Files — modpack installed mods (#523) */}
-      <BentoPanel sx={{ mt: 3 }}>
-        <Box sx={{ p: 2.5 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-            <FolderZipIcon sx={{ color: 'text.secondary' }} />
-            <Typography variant="h6" fontWeight={600}>
-              Installed Jar Files
-            </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
-              (from modpack)
-            </Typography>
-          </Box>
-          <Divider sx={{ mb: 2 }} />
-
-          {isInstalledLoading ? (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-              {[1, 2, 3].map((i) => (
-                <Skeleton key={i} variant="rounded" height={48} />
-              ))}
-            </Box>
-          ) : !installedModsData || installedModsData.mods.length === 0 ? (
-            <Box sx={{ textAlign: 'center', py: 3 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
+            <Box>
+              <Typography variant="h6" fontWeight={600}>Mods</Typography>
               <Typography variant="body2" color="text.secondary">
-                No jar files found in the mods directory.
+                {compat ? `Minecraft ${compat.gameVersion} · ${compat.loader}` : 'Checking server compatibility…'}
               </Typography>
-              <Typography variant="caption" color="text.disabled">
-                Jar files appear after the modpack is first installed.
-              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+              <Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => void checkUpdates()} disabled={checkingUpdates || !compat}>
+                {checkingUpdates ? 'Checking…' : 'Check updates'}
+              </Button>
+              <Button variant="outlined" startIcon={<UpdateIcon />} onClick={() => void updateAll()} disabled={!updateCount || update.isPending}>
+                Update all{updateCount ? ` (${updateCount})` : ''}
+              </Button>
+              {untrackedCount > 0 && <Button variant="outlined" onClick={() => void adopt.mutateAsync({ serverName }).then((result) => setNotice({ text: `Matched ${result.adopted.length} existing Modrinth mod(s); ${result.unrecognized.length} JAR(s) remain unmatched.`, severity: 'info' })).catch((error) => showError(error, 'Could not identify existing mods.'))} disabled={adopt.isPending}>{adopt.isPending ? 'Identifying…' : `Identify existing (${untrackedCount})`}</Button>}
+              <Button variant="contained" startIcon={<AddIcon />} onClick={() => { setSelectedProject(null); setQuery(''); setSearchOpen(true); }}>
+                Add mod
+              </Button>
+            </Box>
+          </Box>
+          {!compat && <Alert severity="warning" sx={{ mt: 2 }}>Set an exact Minecraft version and supported mod loader in Server settings before installing mods.</Alert>}
+          {sourcesData?.sources.find((item) => item.id === 'curseforge')?.requiresApiKey && (
+            <Alert severity="info" sx={{ mt: 2 }}>
+              CurseForge requires an API key. Create one at <a href="https://console.curseforge.com/" target="_blank" rel="noreferrer">console.curseforge.com</a>, then enter it in the publisher selector.
+            </Alert>
+          )}
+          {mods.length === 0 ? (
+            <Box sx={{ textAlign: 'center', py: 5 }}>
+              <ExtensionIcon sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
+              <Typography>No mod JARs found</Typography>
+              <Typography variant="body2" color="text.secondary">Add a compatible version from a supported publisher.</Typography>
             </Box>
           ) : (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-              {installedModsData.mods.map((entry: InstalledModEntry) => (
-                <BentoPanel
-                  key={entry.filename}
-                  component="div"
-                  sx={{
-                    borderRadius: 2,
-                    opacity: entry.excluded ? 0.6 : 1,
-                    borderColor: entry.excluded ? 'warning.main' : 'divider',
-                  }}
-                >
-                  <Box sx={{ py: 1, px: 2 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      {entry.excluded ? (
-                        <BlockIcon sx={{ fontSize: 18, color: 'warning.main', flexShrink: 0 }} />
-                      ) : (
-                        <ExtensionIcon sx={{ fontSize: 18, color: 'text.disabled', flexShrink: 0 }} />
-                      )}
-                      <Typography
-                        variant="body2"
-                        sx={{
-                          flex: 1,
-                          minWidth: 0,
-                          textDecoration: entry.excluded ? 'line-through' : 'none',
-                          color: entry.excluded ? 'text.disabled' : 'text.primary',
-                          fontFamily: 'monospace',
-                          fontSize: '0.8rem',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {entry.filename}
-                      </Typography>
-                      <Tooltip title={entry.excluded ? 'Include this mod' : 'Exclude this mod from next install'}>
-                        <FormControlLabel
-                          control={
-                            <Switch
-                              size="small"
-                              checked={!entry.excluded}
-                              onChange={() => handleToggleExclude(entry)}
-                              disabled={toggleExclude.isPending}
-                              color="primary"
-                            />
-                          }
-                          label={
-                            <Typography variant="caption" color="text.secondary">
-                              {entry.excluded ? 'Excluded' : 'Included'}
-                            </Typography>
-                          }
-                          labelPlacement="start"
-                          sx={{ m: 0, flexShrink: 0 }}
-                        />
-                      </Tooltip>
-                    </Box>
-                  </Box>
-                </BentoPanel>
-              ))}
-            </Box>
-          )}
-        </Box>
-      </BentoPanel>
-
-      {/* Search Dialog */}
-      <Dialog
-        open={searchOpen}
-        onClose={() => setSearchOpen(false)}
-        maxWidth="sm"
-        fullWidth
-        PaperProps={{ sx: { minHeight: 400 } }}
-      >
-        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          Search Mods
-          <IconButton onClick={() => setSearchOpen(false)} size="small">
-            <CloseIcon />
-          </IconButton>
-        </DialogTitle>
-        <DialogContent>
-          <TextField
-            fullWidth
-            autoFocus
-            placeholder="Search Modrinth..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon />
-                </InputAdornment>
-              ),
-            }}
-            sx={{ mb: 2 }}
-          />
-
-          {isSearching && (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-              <CircularProgress size={28} />
-            </Box>
-          )}
-
-          {!isSearching && searchData && searchData.hits.length === 0 && debouncedQuery && (
-            <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>
-              No mods found for &quot;{debouncedQuery}&quot;
-            </Typography>
-          )}
-
-          {!isSearching && searchData && searchData.hits.length > 0 && (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-              {searchData.hits.map((hit) => {
-                const isInstalled = installedSlugs.has(hit.slug);
+            <Box sx={{ mt: 2 }}>
+              <Divider sx={{ mb: 1 }} />
+              {mods.map((mod: InstalledModEntry) => {
+                const modUpdate = updateByFilename.get(mod.filename);
                 return (
-                  <BentoPanel key={hit.slug} component="div" sx={{ borderRadius: 2 }}>
-                    <Box sx={{ py: 1.5, px: 2 }}>
-                      <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
-                        <Avatar
-                          src={hit.iconUrl || undefined}
-                          variant="rounded"
-                          sx={{ width: 40, height: 40, bgcolor: 'action.hover' }}
-                        >
-                          <ExtensionIcon />
-                        </Avatar>
-                        <Box sx={{ flex: 1, minWidth: 0 }}>
-                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <Typography variant="subtitle2" noWrap>
-                              {hit.title}
-                            </Typography>
-                            <Button
-                              size="small"
-                              variant={isInstalled ? 'outlined' : 'contained'}
-                              disabled={isInstalled || addMod.isPending}
-                              onClick={() => handleAddMod(hit.slug)}
-                              sx={{ ml: 1, minWidth: 80, flexShrink: 0 }}
-                            >
-                              {isInstalled ? 'Installed' : 'Add'}
-                            </Button>
-                          </Box>
-                          <Typography
-                            variant="body2"
-                            color="text.secondary"
-                            sx={{
-                              mt: 0.25,
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              display: '-webkit-box',
-                              WebkitLineClamp: 2,
-                              WebkitBoxOrient: 'vertical',
-                            }}
-                          >
-                            {hit.description}
-                          </Typography>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
-                              <DownloadIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
-                              <Typography variant="caption" color="text.disabled">
-                                {formatDownloads(hit.downloads)}
-                              </Typography>
-                            </Box>
-                            {hit.author && (
-                              <Typography variant="caption" color="text.disabled">
-                                by {hit.author}
-                              </Typography>
-                            )}
-                          </Box>
-                        </Box>
-                      </Box>
+                  <Box key={mod.filename} sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 1.25, borderBottom: 1, borderColor: 'divider', opacity: mod.enabled === false ? 0.62 : 1 }}>
+                    <ExtensionIcon color={mod.enabled === false ? 'disabled' : 'action'} />
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography variant="subtitle2" noWrap>{mod.title || mod.filename}</Typography>
+                      <Typography variant="caption" color="text.secondary" noWrap>
+                        {mod.filename}{mod.version ? ` · ${mod.version}` : ''}{mod.source ? ` · ${mod.source}` : ' · existing JAR'}
+                      </Typography>
+                      {modUpdate?.updateAvailable && <Chip size="small" color="primary" label={`Update: ${modUpdate.latestVersion}`} sx={{ ml: 1, height: 20 }} />}
                     </Box>
-                  </BentoPanel>
+                    {modUpdate?.updateAvailable && <Tooltip title="Update this mod"><IconButton size="small" onClick={() => void update.mutateAsync({ serverName, filenames: [mod.filename] }).then(() => setNotice({ text: `${mod.title || mod.filename} updated. Restart the server to load it.`, severity: 'success' })).catch((error) => showError(error, 'Update failed.'))}><UpdateIcon fontSize="small" /></IconButton></Tooltip>}
+                    <Tooltip title="Choose and edit this mod’s config files"><IconButton size="small" onClick={() => openConfig(mod)}><SettingsIcon fontSize="small" /></IconButton></Tooltip>
+                    <FormControlLabel
+                      control={<Switch size="small" checked={mod.enabled !== false} onChange={() => void handleToggle(mod)} disabled={setEnabled.isPending} />}
+                      label={<Typography variant="caption">{mod.enabled === false ? 'Disabled' : 'Enabled'}</Typography>}
+                      labelPlacement="start" sx={{ m: 0, gap: 0.5 }}
+                    />
+                    <Tooltip title="Delete mod JAR"><IconButton size="small" color="error" onClick={() => setConfirmDelete(mod)}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
+                  </Box>
                 );
               })}
             </Box>
           )}
+        </Box>
+      </BentoPanel>
+
+      <Dialog open={searchOpen} onClose={() => setSearchOpen(false)} fullWidth maxWidth="md">
+        <DialogTitle>Add a compatible mod</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', gap: 2, mb: 2, mt: 1 }}>
+            <FormControl sx={{ minWidth: 180 }}>
+              <InputLabel>Publisher</InputLabel>
+              <Select value={source} label="Publisher" onChange={(event) => { setSource(event.target.value); setSelectedProject(null); setSelectedVersion(''); }}>
+                {(sourcesData?.sources ?? []).map((item) => <MenuItem key={item.id} value={item.id}>{item.name}{!item.available && item.requiresApiKey ? ' · API key needed' : ''}</MenuItem>)}
+              </Select>
+            </FormControl>
+            <TextField fullWidth autoFocus label="Search mods" placeholder={`Search ${availableSource?.name ?? 'publisher'}…`} value={query} onChange={(event) => { setQuery(event.target.value); setSelectedProject(null); setSelectedVersion(''); }} />
+          </Box>
+          {source === 'curseforge' && availableSource?.requiresApiKey && (
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start', mb: 2 }}>
+              <TextField fullWidth type="password" label="CurseForge API key" value={curseForgeKey} onChange={(event) => setCurseForgeKey(event.target.value)} autoComplete="new-password" />
+              <Button variant="outlined" onClick={() => void saveCurseForgeKey()} disabled={!curseForgeKey || saveKey.isPending}>{saveKey.isPending ? 'Saving…' : 'Connect'}</Button>
+            </Box>
+          )}
+          {searching && <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}><CircularProgress size={26} /></Box>}
+          <Box sx={{ display: 'grid', gap: 1 }}>
+            {(searchData?.hits ?? []).map((hit) => (
+              <BentoPanel key={`${hit.sourceName ?? source}:${hit.sourceId ?? hit.slug}`} sx={{ p: 1.5, cursor: 'pointer', border: selectedProject?.slug === hit.slug ? 1 : undefined, borderColor: 'primary.main' }} onClick={() => { setSelectedProject(hit); setSelectedVersion(''); }}>
+                <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center' }}>
+                  <Avatar src={hit.iconUrl ?? undefined} variant="rounded"><ExtensionIcon /></Avatar>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography fontWeight={600}>{hit.title}</Typography>
+                    <Typography variant="body2" color="text.secondary" noWrap>{hit.description}</Typography>
+                  </Box>
+                  <Chip size="small" label={availableSource?.name ?? source} />
+                </Box>
+              </BentoPanel>
+            ))}
+            {!searching && query && !searchData?.hits.length && <Typography color="text.secondary" sx={{ py: 2 }}>No compatible mods found for this server.</Typography>}
+          </Box>
+          {selectedProject && (
+            <Box sx={{ display: 'flex', gap: 2, mt: 2, alignItems: 'center' }}>
+              <FormControl fullWidth>
+                <InputLabel>Compatible version</InputLabel>
+                <Select value={selectedVersion} label="Compatible version" onChange={(event) => setSelectedVersion(event.target.value)}>
+                  {(versionData?.versions ?? []).map((version) => <MenuItem key={version.id} value={version.id}>{version.versionNumber} · {version.versionType} · {new Date(version.datePublished).toLocaleDateString()}</MenuItem>)}
+                </Select>
+              </FormControl>
+              <Button variant="contained" onClick={() => void handleInstall()} disabled={!selectedVersion || install.isPending || loadingVersions}>
+                {install.isPending ? 'Verifying…' : 'Install'}
+              </Button>
+            </Box>
+          )}
+          {selectedProject && loadingVersions && <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>Checking game version and loader compatibility…</Typography>}
         </DialogContent>
+        <DialogActions><Button onClick={() => setSearchOpen(false)}>Close</Button></DialogActions>
       </Dialog>
 
-      {/* Snackbar */}
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={4000}
-        onClose={() => setSnackbar((prev) => ({ ...prev, open: false }))}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert
-          onClose={() => setSnackbar((prev) => ({ ...prev, open: false }))}
-          severity={snackbar.severity}
-          variant="filled"
-        >
-          {snackbar.message}
-        </Alert>
+      <Dialog open={!!confirmDelete} onClose={() => setConfirmDelete(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Delete mod file?</DialogTitle>
+        <DialogContent><Typography>Delete {confirmDelete?.filename} from this server? This applies on the next restart.</Typography></DialogContent>
+        <DialogActions><Button onClick={() => setConfirmDelete(null)}>Cancel</Button><Button color="error" onClick={() => void handleDelete()} disabled={deleteMod.isPending}>Delete</Button></DialogActions>
+      </Dialog>
+
+      <Dialog open={!!configMod} onClose={() => { setConfigMod(null); setEditingConfig(null); }} fullWidth maxWidth={editingConfig ? 'xl' : 'md'} fullScreen={!!editingConfig}>
+        {editingConfig ? (
+          <TextEditor serverName={serverName} filePath={`/${editingConfig}`} onBack={() => setEditingConfig(null)} />
+        ) : (
+          <>
+            <DialogTitle>Configuration files · {configMod?.title || configMod?.filename}</DialogTitle>
+            <DialogContent>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>Select the files this mod uses. They stay in their original JSON, TOML, YAML, or properties format.</Typography>
+              {loadingConfig ? <CircularProgress size={24} /> : configData?.files.length ? configData.files.map((file) => (
+                <Box key={file} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Checkbox checked={selectedConfigs.includes(file)} onChange={(event) => setSelectedConfigs((current) => event.target.checked ? [...current, file] : current.filter((item) => item !== file))} />
+                  <Typography sx={{ flex: 1, fontFamily: 'monospace', fontSize: '0.85rem' }}>{file}</Typography>
+                  <Button size="small" onClick={() => setEditingConfig(file)}>Open</Button>
+                </Box>
+              )) : <Alert severity="info">No text config files exist under the server’s config directory yet. Some mods create them after the first server start.</Alert>}
+            </DialogContent>
+            <DialogActions><Button onClick={() => setConfigMod(null)}>Close</Button><Button onClick={() => void handleConfigSave()} disabled={saveConfigs.isPending}>{saveConfigs.isPending ? 'Saving…' : 'Save mod links'}</Button></DialogActions>
+          </>
+        )}
+      </Dialog>
+
+      <Snackbar open={!!notice} autoHideDuration={6000} onClose={() => setNotice(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+        {notice ? <Alert severity={notice.severity} onClose={() => setNotice(null)} variant="filled">{notice.text}</Alert> : undefined}
       </Snackbar>
     </Box>
   );

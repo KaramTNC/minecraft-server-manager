@@ -139,6 +139,13 @@ export class ModrinthApiClient {
     return response.json() as Promise<ModrinthVersionRaw[]>;
   }
 
+  async getVersionByFileHash(hash: string, algorithm: 'sha1' = 'sha1'): Promise<ModrinthVersionRaw | null> {
+    const response = await fetch(`${this.baseUrl}/version_file/${encodeURIComponent(hash)}?algorithm=${algorithm}`);
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error(`Modrinth API error: ${response.status} ${response.statusText}`);
+    return response.json() as Promise<ModrinthVersionRaw>;
+  }
+
   /**
    * Get team members for a project
    */

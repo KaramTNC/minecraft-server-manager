@@ -9,6 +9,12 @@ import type {
   ModVersionsResponse,
   InstalledModsResponse,
   ToggleModExcludeResponse,
+  ModSourcesResponse,
+  ModCompatibilityResponse,
+  CompatibleModVersionsResponse,
+  ModConfigFilesResponse,
+  ModUpdatesResponse,
+  InstalledModEntry,
 } from '@/ports/api/IMcctlApiClient';
 
 // ============================================================
@@ -32,17 +38,148 @@ export function useServerMods(serverName: string, options?: { enabled?: boolean 
  */
 export function useModSearch(
   query: string,
-  options?: { limit?: number; offset?: number; enabled?: boolean }
+  options?: { limit?: number; offset?: number; enabled?: boolean; source?: string; serverName?: string }
 ) {
   const params = new URLSearchParams();
   if (query) params.set('q', query);
   if (options?.limit != null) params.set('limit', String(options.limit));
   if (options?.offset != null) params.set('offset', String(options.offset));
+  if (options?.source) params.set('source', options.source);
+  if (options?.serverName) params.set('serverName', options.serverName);
 
   return useQuery<ModSearchResponse, Error>({
-    queryKey: ['mods', 'search', query, options?.limit, options?.offset],
+    queryKey: ['mods', 'search', query, options?.limit, options?.offset, options?.source, options?.serverName],
     queryFn: () => apiFetch<ModSearchResponse>(`/api/mods/search?${params}`),
     enabled: options?.enabled !== false && !!query.trim(),
+  });
+}
+
+const mcctlPath = (path: string) => `/api/mcctl/${path.replace(/^\/+/, '')}`;
+
+export function useModSources() {
+  return useQuery<ModSourcesResponse, Error>({
+    queryKey: ['mods', 'sources'],
+    queryFn: () => apiFetch<ModSourcesResponse>(mcctlPath('mods/sources')),
+    staleTime: 60_000,
+  });
+}
+
+export function useSaveCurseForgeApiKey() {
+  const queryClient = useQueryClient();
+  return useMutation<{ success: boolean; configured: boolean }, Error, { apiKey: string }>({
+    mutationFn: ({ apiKey }) => apiFetch(mcctlPath('mods/sources/curseforge-key'), {
+      method: 'PUT', body: JSON.stringify({ apiKey }),
+    }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['mods', 'sources'] }),
+  });
+}
+
+export function useModCompatibility(serverName: string) {
+  return useQuery<ModCompatibilityResponse, Error>({
+    queryKey: ['servers', serverName, 'mods', 'compatibility'],
+    queryFn: () => apiFetch<ModCompatibilityResponse>(mcctlPath(`servers/${encodeURIComponent(serverName)}/mods/compatibility`)),
+    enabled: !!serverName,
+  });
+}
+
+export function useCompatibleModVersions(slug: string, source: string, serverName: string, enabled = true) {
+  const params = new URLSearchParams({ source, serverName });
+  return useQuery<CompatibleModVersionsResponse, Error>({
+    queryKey: ['mods', 'compatible-versions', source, slug, serverName],
+    queryFn: () => apiFetch<CompatibleModVersionsResponse>(mcctlPath(`mods/${encodeURIComponent(slug)}/compatible-versions?${params}`)),
+    enabled: enabled && !!slug && !!serverName,
+    staleTime: 60_000,
+  });
+}
+
+export function useInstallManagedMod() {
+  const queryClient = useQueryClient();
+  return useMutation<unknown, Error, { serverName: string; source: string; projectId: string; versionId: string }>({
+    mutationFn: ({ serverName, source, projectId, versionId }) =>
+      apiFetch(mcctlPath(`servers/${encodeURIComponent(serverName)}/mods/manage`), {
+        method: 'POST', body: JSON.stringify({ source, projectId, versionId }),
+      }),
+    onSuccess: (_, { serverName }) => {
+      queryClient.invalidateQueries({ queryKey: ['servers', serverName, 'mods'] });
+      queryClient.invalidateQueries({ queryKey: ['servers', serverName, 'mods', 'installed'] });
+      queryClient.invalidateQueries({ queryKey: ['servers', serverName, 'mods', 'updates'] });
+    },
+  });
+}
+
+export function useAdoptExistingMods() {
+  const queryClient = useQueryClient();
+  return useMutation<{ adopted: InstalledModEntry[]; unrecognized: string[] }, Error, { serverName: string }>({
+    mutationFn: ({ serverName }) => apiFetch(mcctlPath(`servers/${encodeURIComponent(serverName)}/mods/adopt`), { method: 'POST' }),
+    onSuccess: (_, { serverName }) => {
+      queryClient.invalidateQueries({ queryKey: ['servers', serverName, 'mods', 'installed'] });
+      queryClient.invalidateQueries({ queryKey: ['servers', serverName, 'mods', 'updates'] });
+    },
+  });
+}
+
+export function useManagedModUpdates(serverName: string) {
+  return useQuery<ModUpdatesResponse, Error>({
+    queryKey: ['servers', serverName, 'mods', 'updates'],
+    queryFn: () => apiFetch<ModUpdatesResponse>(mcctlPath(`servers/${encodeURIComponent(serverName)}/mods/updates`)),
+    enabled: !!serverName,
+    staleTime: 60_000,
+  });
+}
+
+export function useUpdateManagedMods() {
+  const queryClient = useQueryClient();
+  return useMutation<unknown, Error, { serverName: string; filenames?: string[] }>({
+    mutationFn: ({ serverName, filenames }) =>
+      apiFetch(mcctlPath(`servers/${encodeURIComponent(serverName)}/mods/update`), {
+        method: 'POST', body: JSON.stringify({ filenames }),
+      }),
+    onSuccess: (_, { serverName }) => {
+      queryClient.invalidateQueries({ queryKey: ['servers', serverName, 'mods', 'installed'] });
+      queryClient.invalidateQueries({ queryKey: ['servers', serverName, 'mods', 'updates'] });
+    },
+  });
+}
+
+export function useSetManagedModEnabled() {
+  const queryClient = useQueryClient();
+  return useMutation<unknown, Error, { serverName: string; filename: string; enabled: boolean }>({
+    mutationFn: ({ serverName, filename, enabled }) =>
+      apiFetch(mcctlPath(`servers/${encodeURIComponent(serverName)}/mods/installed/${encodeURIComponent(filename)}/state`), {
+        method: 'PATCH', body: JSON.stringify({ enabled }),
+      }),
+    onSuccess: (_, { serverName }) => queryClient.invalidateQueries({ queryKey: ['servers', serverName, 'mods', 'installed'] }),
+  });
+}
+
+export function useDeleteManagedMod() {
+  const queryClient = useQueryClient();
+  return useMutation<unknown, Error, { serverName: string; filename: string }>({
+    mutationFn: ({ serverName, filename }) =>
+      apiFetch(mcctlPath(`servers/${encodeURIComponent(serverName)}/mods/installed/${encodeURIComponent(filename)}`), { method: 'DELETE' }),
+    onSuccess: (_, { serverName }) => {
+      queryClient.invalidateQueries({ queryKey: ['servers', serverName, 'mods', 'installed'] });
+      queryClient.invalidateQueries({ queryKey: ['servers', serverName, 'mods', 'updates'] });
+    },
+  });
+}
+
+export function useModConfigFiles(serverName: string, filename: string | null) {
+  return useQuery<ModConfigFilesResponse, Error>({
+    queryKey: ['servers', serverName, 'mods', filename, 'configs'],
+    queryFn: () => apiFetch<ModConfigFilesResponse>(mcctlPath(`servers/${encodeURIComponent(serverName)}/mods/installed/${encodeURIComponent(filename!)}/configs`)),
+    enabled: !!serverName && !!filename,
+  });
+}
+
+export function useSaveModConfigFiles() {
+  const queryClient = useQueryClient();
+  return useMutation<unknown, Error, { serverName: string; filename: string; files: string[] }>({
+    mutationFn: ({ serverName, filename, files }) =>
+      apiFetch(mcctlPath(`servers/${encodeURIComponent(serverName)}/mods/installed/${encodeURIComponent(filename)}/configs`), {
+        method: 'PUT', body: JSON.stringify({ files }),
+      }),
+    onSuccess: (_, { serverName, filename }) => queryClient.invalidateQueries({ queryKey: ['servers', serverName, 'mods', filename, 'configs'] }),
   });
 }
 
@@ -204,9 +341,7 @@ export function useInstalledMods(serverName: string, options?: { enabled?: boole
   return useQuery<InstalledModsResponse, Error>({
     queryKey: ['servers', serverName, 'mods', 'installed'],
     queryFn: () =>
-      apiFetch<InstalledModsResponse>(
-        `/api/servers/${encodeURIComponent(serverName)}/mods/installed`
-      ),
+      apiFetch<InstalledModsResponse>(mcctlPath(`servers/${encodeURIComponent(serverName)}/mods/installed`)),
     enabled: options?.enabled !== false && !!serverName,
   });
 }
@@ -224,7 +359,7 @@ export function useToggleModExclude() {
   >({
     mutationFn: ({ serverName, filename, excluded }) =>
       apiFetch<ToggleModExcludeResponse>(
-        `/api/servers/${encodeURIComponent(serverName)}/mods/installed/${encodeURIComponent(filename)}/exclude`,
+        mcctlPath(`servers/${encodeURIComponent(serverName)}/mods/installed/${encodeURIComponent(filename)}/exclude`),
         {
           method: 'PATCH',
           body: JSON.stringify({ excluded }),

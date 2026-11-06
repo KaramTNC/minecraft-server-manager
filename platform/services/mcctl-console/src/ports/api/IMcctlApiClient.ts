@@ -592,6 +592,8 @@ export interface ModSearchHit {
   iconUrl: string | null;
   author: string;
   categories: string[];
+  sourceId?: string;
+  sourceName?: string;
 }
 
 export interface ModSearchResponse {
@@ -608,6 +610,17 @@ export interface ModSearchResponse {
 export interface InstalledModEntry {
   filename: string;
   excluded: boolean;
+  source?: string;
+  projectId?: string;
+  slug?: string;
+  title?: string;
+  versionId?: string;
+  version?: string;
+  sha1?: string;
+  managed?: boolean;
+  enabled?: boolean;
+  installedAt?: string;
+  configFiles?: string[];
 }
 
 export interface InstalledModsResponse {
@@ -620,6 +633,39 @@ export interface ToggleModExcludeResponse {
   excluded: boolean;
   excludeList: string[];
   restartRequired: boolean;
+}
+
+export interface ModSourceInfo {
+  id: string;
+  name: string;
+  available: boolean;
+  requiresApiKey: boolean;
+}
+
+export interface ModVersionOption {
+  id: string;
+  projectId: string;
+  name: string;
+  versionNumber: string;
+  versionType: string;
+  gameVersions: string[];
+  loaders: string[];
+  downloads: number;
+  datePublished: string;
+  changelog?: string;
+}
+
+export interface ModCompatibilityResponse { gameVersion: string; loader: string }
+export interface ModSourcesResponse { sources: ModSourceInfo[] }
+export interface CompatibleModVersionsResponse {
+  source: string;
+  gameVersion: string;
+  loader: string;
+  versions: ModVersionOption[];
+}
+export interface ModConfigFilesResponse { files: string[]; selected: string[] }
+export interface ModUpdatesResponse {
+  updates: Array<{ filename: string; currentVersion: string; latestVersion: string | null; updateAvailable: boolean }>;
 }
 
 export interface LoaderCompatibility {
@@ -1056,6 +1102,8 @@ export interface ToggleConfigSnapshotScheduleRequest {
  * Defines the contract for API communication
  */
 export interface IMcctlApiClient {
+  /** Authenticated forwarding for the management API's evolving resource routes. */
+  proxyRequest<T>(endpoint: string, method: string, body?: unknown): Promise<T>;
   // Server operations
   getServers(options?: { include?: 'summary' }): Promise<ServerListResponse>;
   getServer(name: string): Promise<ServerDetailResponse>;
@@ -1130,7 +1178,7 @@ export interface IMcctlApiClient {
   getServerMods(serverName: string): Promise<ModListResponse>;
   addServerMods(serverName: string, slugs: string[], source?: string): Promise<AddModsResponse>;
   removeServerMod(serverName: string, slug: string): Promise<RemoveModResponse>;
-  searchMods(query: string, limit?: number, offset?: number, type?: string): Promise<ModSearchResponse>;
+  searchMods(query: string, limit?: number, offset?: number, type?: string, source?: string, serverName?: string): Promise<ModSearchResponse>;
   getModProjects(slugs: string[], source?: string): Promise<ModProjectsResponse>;
   getModVersions(slug: string, source?: string): Promise<ModVersionsResponse>;
 

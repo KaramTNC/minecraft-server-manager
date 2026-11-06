@@ -351,7 +351,7 @@ GID=1000
       expect(body.changedFields).toContain('motd');
       expect(body.changedFields).toContain('maxPlayers');
       expect(body.changedFields).toContain('difficulty');
-      expect(body.restartRequired).toBe(false);
+      expect(body.restartRequired).toBe(true);
       expect(mockWriteFileSync).toHaveBeenCalled();
     });
 

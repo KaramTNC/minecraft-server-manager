@@ -18,8 +18,8 @@ FROM eclipse-temurin:25-jre
 
 # Pinned BlueMap CLI release. Bump both values together; verify the checksum
 # against the GitHub release asset before changing.
-ARG BLUEMAP_VERSION=5.22
-ARG BLUEMAP_SHA256=a2289d649f6a83e04cf222abcd3d4f2df4e32e61147015f921c05066f63eefb7
+ARG BLUEMAP_VERSION=5.29
+ARG BLUEMAP_SHA256=e830767fa6364b52b9310fb598508ebde7eec5ebe8360a989e240d991af89a3a
 
 ADD "https://github.com/BlueMap-Minecraft/BlueMap/releases/download/v${BLUEMAP_VERSION}/bluemap-${BLUEMAP_VERSION}-cli.jar" \
     /opt/bluemap/bluemap-cli.jar

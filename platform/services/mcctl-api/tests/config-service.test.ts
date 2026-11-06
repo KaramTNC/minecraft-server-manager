@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { EnvValueError, applyEnvChanges } from '@minecraft-docker/shared/utils';
 import { ConfigService } from '../src/services/ConfigService.js';
+import { join } from 'node:path';
 
 // Writes go through the ServerSpec (#675); the fake applies the changes to the file content
 vi.mock('../src/lib/server-spec.js', () => ({ writeServerConfig: vi.fn() }));
@@ -46,7 +47,7 @@ describe('ConfigService', () => {
       const result = configService.configExists('testserver');
 
       expect(result).toBe(true);
-      expect(mockedExistsSync).toHaveBeenCalledWith('/test/platform/servers/testserver/config.env');
+      expect(mockedExistsSync).toHaveBeenCalledWith(join('/test/platform', 'servers', 'testserver', 'config.env'));
     });
 
     it('should return false when config file does not exist', () => {
@@ -55,7 +56,7 @@ describe('ConfigService', () => {
       const result = configService.configExists('nonexistent');
 
       expect(result).toBe(false);
-      expect(mockedExistsSync).toHaveBeenCalledWith('/test/platform/servers/nonexistent/config.env');
+      expect(mockedExistsSync).toHaveBeenCalledWith(join('/test/platform', 'servers', 'nonexistent', 'config.env'));
     });
   });
 
@@ -287,14 +288,14 @@ USE_AIKAR_FLAGS=false
       expect(result.changedFields).toContain('useAikarFlags');
     });
 
-    it('should set restartRequired=false for non-restart fields', async () => {
+    it('should set restartRequired=true for gameplay fields consumed by the server container', async () => {
       setupUpdateTest();
       const result = await configService.updateConfig('testserver', {
         motd: 'New MOTD',
         maxPlayers: 25,
         difficulty: 'hard',
       });
-      expect(result.restartRequired).toBe(false);
+      expect(result.restartRequired).toBe(true);
       expect(result.changedFields).toEqual(['motd', 'maxPlayers', 'difficulty']);
     });
 
@@ -828,7 +829,7 @@ GID=1000
       }
     });
 
-    it('should set restartRequired=false for non-restart fields', async () => {
+    it('should set restartRequired=true for every supported server setting', async () => {
       const nonRestartFields: [string, unknown][] = [
         ['pvp', false],
         ['forceGamemode', true],
@@ -861,7 +862,7 @@ GID=1000
           [field]: value,
         });
 
-        expect(result.restartRequired).toBe(false);
+        expect(result.restartRequired).toBe(true);
         expect(result.changedFields).toContain(field);
       }
     });
