@@ -648,6 +648,22 @@ describe('McctlApiAdapter', () => {
       );
     });
   });
+
+  describe('BFF proxy requests', () => {
+    it('prefixes relative management routes with /api', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ mods: [] }),
+      });
+
+      await adapter.proxyRequest('/servers/survival/mods/installed', 'GET');
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'http://localhost:5001/api/servers/survival/mods/installed',
+        expect.objectContaining({ method: 'GET' })
+      );
+    });
+  });
 });
 
 describe('createMcctlApiClient', () => {

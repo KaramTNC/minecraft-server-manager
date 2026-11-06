@@ -175,7 +175,10 @@ export class McctlApiAdapter implements IMcctlApiClient {
   }
 
   async proxyRequest<T>(endpoint: string, method: string, body?: unknown): Promise<T> {
-    return this.fetch<T>(endpoint, {
+    // BFF callers pass paths relative to the API namespace (for example
+    // /servers/:name/mods), while the Fastify API mounts routes under /api.
+    const apiEndpoint = `/api${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+    return this.fetch<T>(apiEndpoint, {
       method,
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
