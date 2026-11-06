@@ -2064,7 +2064,7 @@ Deletes a schedule. **Response:** `{"success": true, "message": "Schedule delete
 
 ## Config snapshots { #config-snapshots }
 
-A config snapshot stores copies of the configuration files directly in `servers/<name>/`: `server.yaml`, `config.env`, `docker-compose.yml` and other `.yml`, `.yaml`, `.json` and `.properties` files up to 1 MB. Files in `servers/<name>/data` are not included. Snapshots are kept under `backups/meta/` in `MCCTL_ROOT`.
+A config snapshot stores the server definition and supported configuration files in `servers/<name>/`, plus text configs under `data/config`, `data/defaultconfigs`, `data/serverconfig`, and the active world's `serverconfig` directory. Mod config formats include `.toml`, `.json`, `.properties`, `.yml`, `.yaml`, `.cfg`, `.conf`, `.ini`, and `.txt`. Files larger than 1 MB, symbolic links, and mod JARs are excluded. Collection is capped at 2,000 files and 100 MB per snapshot. Snapshots are kept under `backups/meta/` in `MCCTL_ROOT`.
 
 **Snapshot object:**
 

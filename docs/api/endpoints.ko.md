@@ -2064,7 +2064,7 @@ kind 판정:
 
 ## 설정 스냅샷 { #config-snapshots }
 
-설정 스냅샷은 `servers/<name>/` 바로 아래의 설정 파일 사본을 저장합니다: `server.yaml`, `config.env`, `docker-compose.yml`과 1 MB 이하의 다른 `.yml`, `.yaml`, `.json`, `.properties` 파일입니다. `servers/<name>/data`의 파일은 포함되지 않습니다. 스냅샷은 `MCCTL_ROOT`의 `backups/meta/` 아래에 보관됩니다.
+설정 스냅샷은 `servers/<name>/`의 서버 정의와 설정 파일, 그리고 `data/config`, `data/defaultconfigs`, `data/serverconfig`, 활성 월드의 `serverconfig` 폴더에 있는 텍스트 설정 파일을 저장합니다. 모드 설정 형식은 `.toml`, `.json`, `.properties`, `.yml`, `.yaml`, `.cfg`, `.conf`, `.ini`, `.txt`를 포함합니다. 1 MB가 넘는 파일, 심볼릭 링크, 모드 JAR은 제외하며 스냅샷당 최대 2,000개 파일과 100 MB까지 수집합니다. 스냅샷은 `MCCTL_ROOT`의 `backups/meta/` 아래에 보관됩니다.
 
 **스냅샷 객체:**
 

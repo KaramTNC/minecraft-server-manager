@@ -1049,7 +1049,7 @@ It asks before restoring unless `--force` or `--json` is given. The current file
 
 ### mcctl config-snapshot
 
-Save and restore copies of a server's configuration files. A snapshot holds the files in `servers/<server>/` itself (not `data/`): `server.yaml`, `config.env`, `docker-compose.yml` and any other `.yml`, `.yaml`, `.json` or `.properties` file up to 1 MB. Snapshots are stored in `backups/meta/config-snapshots.db` and `backups/meta/config-snapshot-storage/`.
+Save and restore copies of a server's configuration files. A snapshot includes the server definition and supported config files in `servers/<server>/`, plus supported text configs under `data/config`, `data/defaultconfigs`, `data/serverconfig`, and the active world's `serverconfig` folder. Mod configs can use `.toml`, `.json`, `.properties`, `.yml`, `.yaml`, `.cfg`, `.conf`, `.ini`, or `.txt` formats. Files over 1 MB, symbolic links, and mod JARs are excluded; the collector also caps a snapshot at 2,000 files and 100 MB. Snapshots are stored in `backups/meta/config-snapshots.db` and `backups/meta/config-snapshot-storage/`.
 
 ```bash
 mcctl config-snapshot <list|create|show|diff|restore|delete> [args] [options]

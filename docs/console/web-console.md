@@ -471,7 +471,7 @@ The file manager includes intelligent editors that adapt to the file type:
 
 ![Config History](../images/server-config-history.png)
 
-The **Config History** tab keeps a timeline of configuration snapshots for this server. A snapshot captures the server's configuration files (`server.properties`, `config.env`, etc.), so you can compare versions and roll back. The same snapshots are also available on the [Backups](#backups) page.
+The **Config History** tab keeps a timeline of configuration snapshots for this server. A snapshot captures server configuration files and mod configs under `data/config`, `data/defaultconfigs`, `data/serverconfig`, and the active world's `serverconfig` folder. You can compare and restore those files; mod JARs are not part of config snapshots. The same snapshots are also available on the [Backups](#backups) page.
 
 - **Create Snapshot** -- Save the current configuration. Add an optional description such as "Before modpack update"
 - **Timeline** -- Snapshots are listed newest first and grouped by date. Each entry shows its time, a **Scheduled** chip if a schedule created it, its description (or "No description"), and its file count

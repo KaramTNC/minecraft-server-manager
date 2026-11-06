@@ -1049,7 +1049,7 @@ mcctl server-restore myserver 20260120-203357 --dry-run
 
 ### mcctl config-snapshot
 
-서버 설정 파일의 사본을 저장하고 복원합니다. 스냅샷에는 `servers/<server>/` 바로 아래(`data/` 제외)의 파일이 들어갑니다: `server.yaml`, `config.env`, `docker-compose.yml`, 그리고 1MB 이하의 다른 `.yml`, `.yaml`, `.json`, `.properties` 파일. 스냅샷은 `backups/meta/config-snapshots.db`와 `backups/meta/config-snapshot-storage/`에 저장됩니다.
+서버 설정 파일의 사본을 저장하고 복원합니다. 스냅샷에는 `servers/<server>/`의 서버 정의와 설정 파일, 그리고 `data/config`, `data/defaultconfigs`, `data/serverconfig`, 활성 월드의 `serverconfig` 폴더에 있는 지원되는 텍스트 설정 파일이 포함됩니다. 모드 설정은 `.toml`, `.json`, `.properties`, `.yml`, `.yaml`, `.cfg`, `.conf`, `.ini`, `.txt` 형식을 지원합니다. 1MB가 넘는 파일, 심볼릭 링크, 모드 JAR은 제외하며 스냅샷은 최대 2,000개 파일과 100MB로 제한됩니다. 스냅샷은 `backups/meta/config-snapshots.db`와 `backups/meta/config-snapshot-storage/`에 저장됩니다.
 
 ```bash
 mcctl config-snapshot <list|create|show|diff|restore|delete> [args] [options]

@@ -140,8 +140,8 @@ function ConfigSnapshotsContent({ serverName }: { serverName: string }) {
       </Box>
 
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        Config snapshots capture server configuration files (server.properties, config.env, etc.)
-        for versioning, comparison, and restore operations.
+        Config snapshots capture server settings and mod config files (including TOML, JSON, and properties files).
+        Mod JARs are not included.
       </Typography>
 
       <ConfigSnapshotServerCard
