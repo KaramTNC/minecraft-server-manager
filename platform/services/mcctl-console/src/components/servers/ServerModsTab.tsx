@@ -36,7 +36,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import SettingsIcon from '@mui/icons-material/Settings';
 import UpdateIcon from '@mui/icons-material/Update';
 import { BentoPanel } from '@/components/bento';
-import { TextEditor } from './files/TextEditor';
+import { ModConfigEditor } from './ModConfigEditor';
 import {
   useCompatibleModVersions,
   useAdoptExistingMods,
@@ -313,13 +313,13 @@ export function ServerModsTab({ serverName }: ServerModsTabProps) {
 
       <Dialog open={!!configMod} onClose={() => { setConfigMod(null); setEditingConfig(null); }} fullWidth maxWidth={editingConfig ? 'xl' : 'md'} fullScreen={!!editingConfig}>
         {editingConfig ? (
-          <TextEditor serverName={serverName} filePath={`/${editingConfig}`} onBack={() => setEditingConfig(null)} />
+          <ModConfigEditor serverName={serverName} filePath={editingConfig} onBack={() => setEditingConfig(null)} />
         ) : (
           <>
             <DialogTitle>Configuration files · {configMod?.title || configMod?.filename}</DialogTitle>
             <DialogContent>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                mcctl reads the mod ID from the installed JAR and matches it to config file names and folders. Open a detected file directly, or browse other text configs if the mod uses a generic name.
+                mcctl matches config files from the mod’s JAR ID. Open a detected file to edit settings in a structured view; use the raw editor for advanced values or other formats.
               </Typography>
               {loadingConfig ? <CircularProgress size={24} /> : configData && (
                 <>
